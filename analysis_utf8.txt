@@ -1,0 +1,36 @@
+﻿Analyzing blindkey_app...                                       
+
+   info - 'FolderRepositoryRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:14:35 - deprecated_member_use_from_same_package
+   info - 'FileStorageServiceRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:19:39 - deprecated_member_use_from_same_package
+   info - 'MetadataRepositoryRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:24:39 - deprecated_member_use_from_same_package
+   info - 'SharedMetadataRepositoryRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:37:45 - deprecated_member_use_from_same_package
+   info - 'CryptographyServiceRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:42:41 - deprecated_member_use_from_same_package
+   info - 'FileRepositoryRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:47:31 - deprecated_member_use_from_same_package
+   info - 'VaultServiceRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:54:27 - deprecated_member_use_from_same_package
+warning - The value of the local variable 'folderRepo' isn't used - lib\application\providers.dart:55:9 - unused_local_variable
+   info - 'FolderRepositoryImplRef' is deprecated and shouldn't be used. Will be removed in 3.0. Use Ref instead - lib\application\providers.dart:68:39 - deprecated_member_use_from_same_package
+warning - The value of the local variable 'keyBytes' isn't used - lib\application\services\vault_service.dart:36:13 - unused_local_variable
+warning - The value of the local variable 'nonce' isn't used - lib\application\services\vault_service.dart:264:15 - unused_local_variable
+warning - The value of the local variable 'ciphertextWithTag' isn't used - lib\application\services\vault_service.dart:265:15 - unused_local_variable
+warning - The value of the local variable 'tempDir' isn't used - lib\application\services\vault_service.dart:478:13 - unused_local_variable
+warning - The value of the local variable 'folderId' isn't used - lib\application\services\vault_service.dart:531:17 - unused_local_variable
+warning - The value of the local variable 'vault' isn't used - lib\application\store\file_notifier.dart:30:11 - unused_local_variable
+warning - Unused import: 'dart:typed_data' - lib\infrastructure\encryption\cryptography_service.dart:1:8 - unused_import
+warning - The method doesn't override an inherited method - lib\infrastructure\repositories\file_repository_impl.dart:51:41 - override_on_non_overriding_member
+warning - The method doesn't override an inherited method - lib\infrastructure\repositories\file_repository_impl.dart:76:38 - override_on_non_overriding_member
+   info - The member 'saveFileModel' overrides an inherited member but isn't annotated with '@override' - lib\infrastructure\repositories\file_repository_impl.dart:84:33 - annotate_overrides
+warning - The method doesn't override an inherited method - lib\infrastructure\repositories\metadata_repository.dart:53:40 - override_on_non_overriding_member
+   info - The member 'saveFolder' overrides an inherited member but isn't annotated with '@override' - lib\infrastructure\repositories\metadata_repository.dart:87:33 - annotate_overrides
+warning - The method doesn't override an inherited method - lib\infrastructure\repositories\metadata_repository.dart:136:33 - override_on_non_overriding_member
+warning - The value of the local variable 'vault' isn't used - lib\presentation\pages\file_view_page.dart:98:13 - unused_local_variable
+warning - This class (or a class that this class inherits from) is marked as '@immutable', but one or more of its instance fields aren't final: HomePage.import - lib\presentation\pages\home_page.dart:9:7 - must_be_immutable
+  error - Can't define a const constructor for a class with non-final fields - lib\presentation\pages\home_page.dart:10:9 - const_constructor_with_non_final_field
+   info - An uninitialized field should have an explicit type annotation - lib\presentation\pages\home_page.dart:12:1 - prefer_typing_uninitialized_variables
+  error - Expected to find ';' - lib\presentation\pages\home_page.dart:12:1 - expected_token
+  error - Variables must be declared using the keywords 'const', 'final', 'var' or a type name - lib\presentation\pages\home_page.dart:12:1 - missing_const_final_var_or_type
+  error - Expected a class member - lib\presentation\pages\home_page.dart:12:8 - expected_class_member
+  error - Expected a class member - lib\presentation\pages\home_page.dart:12:46 - expected_class_member
+warning - The value of 'refresh' should be used - lib\presentation\pages\home_page.dart:159:27 - unused_result
+warning - The value of the local variable 'result' isn't used - lib\presentation\pages\home_page.dart:175:11 - unused_local_variable
+  error - The name 'MyApp' isn't a class - test\widget_test.dart:16:35 - creation_with_non_type
+
