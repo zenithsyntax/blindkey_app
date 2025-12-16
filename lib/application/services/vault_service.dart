@@ -644,9 +644,42 @@ class VaultService {
       case 'webm':
         return 'video/webm';
       case 'txt':
-        return 'text/plain';
+      case 'css':
+      case 'xml':
+      case 'json':
+      case 'yaml':
+      case 'yml':
+      case 'dart':
+      case 'md':
+      case 'csv':
+        return 'text/plain'; 
+      case 'html': // Special handling maybe?
+        return 'text/html';
+      case 'svg':
+        return 'image/svg+xml';
+      case 'tif':
+      case 'tiff':
+        return 'image/tiff'; // Not fully supported by Flutter Image, may need conversion or open external
+      case 'bmp':
+        return 'image/bmp';
       case 'pdf':
         return 'application/pdf';
+      case 'doc':
+      case 'docx':
+        return 'application/msword';
+      case 'xls':
+      case 'xlsx':
+        return 'application/vnd.ms-excel';
+      case 'ppt':
+      case 'pptx':
+        return 'application/vnd.ms-powerpoint';
+      case 'mp3':
+      case 'wav':
+      case 'aac':
+      case 'wma':
+      case 'flac':
+      case 'm4a':
+        return 'audio/mpeg'; // Generic audio
       default:
         return 'application/octet-stream';
     }

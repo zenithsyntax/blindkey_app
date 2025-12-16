@@ -13,6 +13,7 @@ _$FolderModelImpl _$$FolderModelImplFromJson(Map<String, dynamic> json) =>
       salt: json['salt'] as String,
       verificationHash: json['verificationHash'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      allowSave: json['allowSave'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$$FolderModelImplToJson(_$FolderModelImpl instance) =>
@@ -22,4 +23,5 @@ Map<String, dynamic> _$$FolderModelImplToJson(_$FolderModelImpl instance) =>
       'salt': instance.salt,
       'verificationHash': instance.verificationHash,
       'createdAt': instance.createdAt.toIso8601String(),
+      'allowSave': instance.allowSave,
     };

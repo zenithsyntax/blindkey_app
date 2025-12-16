@@ -28,6 +28,7 @@ mixin _$FolderModel {
   String get verificationHash =>
       throw _privateConstructorUsedError; // Base64 encoded hash to verify password
   DateTime get createdAt => throw _privateConstructorUsedError;
+  bool get allowSave => throw _privateConstructorUsedError;
 
   /// Serializes this FolderModel to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -52,6 +53,7 @@ abstract class $FolderModelCopyWith<$Res> {
     String salt,
     String verificationHash,
     DateTime createdAt,
+    bool allowSave,
   });
 }
 
@@ -75,6 +77,7 @@ class _$FolderModelCopyWithImpl<$Res, $Val extends FolderModel>
     Object? salt = null,
     Object? verificationHash = null,
     Object? createdAt = null,
+    Object? allowSave = null,
   }) {
     return _then(
       _value.copyWith(
@@ -98,6 +101,10 @@ class _$FolderModelCopyWithImpl<$Res, $Val extends FolderModel>
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
                       as DateTime,
+            allowSave: null == allowSave
+                ? _value.allowSave
+                : allowSave // ignore: cast_nullable_to_non_nullable
+                      as bool,
           )
           as $Val,
     );
@@ -119,6 +126,7 @@ abstract class _$$FolderModelImplCopyWith<$Res>
     String salt,
     String verificationHash,
     DateTime createdAt,
+    bool allowSave,
   });
 }
 
@@ -141,6 +149,7 @@ class __$$FolderModelImplCopyWithImpl<$Res>
     Object? salt = null,
     Object? verificationHash = null,
     Object? createdAt = null,
+    Object? allowSave = null,
   }) {
     return _then(
       _$FolderModelImpl(
@@ -164,6 +173,10 @@ class __$$FolderModelImplCopyWithImpl<$Res>
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
                   as DateTime,
+        allowSave: null == allowSave
+            ? _value.allowSave
+            : allowSave // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -178,6 +191,7 @@ class _$FolderModelImpl implements _FolderModel {
     required this.salt,
     required this.verificationHash,
     required this.createdAt,
+    this.allowSave = true,
   });
 
   factory _$FolderModelImpl.fromJson(Map<String, dynamic> json) =>
@@ -195,10 +209,13 @@ class _$FolderModelImpl implements _FolderModel {
   // Base64 encoded hash to verify password
   @override
   final DateTime createdAt;
+  @override
+  @JsonKey()
+  final bool allowSave;
 
   @override
   String toString() {
-    return 'FolderModel(id: $id, name: $name, salt: $salt, verificationHash: $verificationHash, createdAt: $createdAt)';
+    return 'FolderModel(id: $id, name: $name, salt: $salt, verificationHash: $verificationHash, createdAt: $createdAt, allowSave: $allowSave)';
   }
 
   @override
@@ -212,13 +229,22 @@ class _$FolderModelImpl implements _FolderModel {
             (identical(other.verificationHash, verificationHash) ||
                 other.verificationHash == verificationHash) &&
             (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt));
+                other.createdAt == createdAt) &&
+            (identical(other.allowSave, allowSave) ||
+                other.allowSave == allowSave));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, id, name, salt, verificationHash, createdAt);
+  int get hashCode => Object.hash(
+    runtimeType,
+    id,
+    name,
+    salt,
+    verificationHash,
+    createdAt,
+    allowSave,
+  );
 
   /// Create a copy of FolderModel
   /// with the given fields replaced by the non-null parameter values.
@@ -241,6 +267,7 @@ abstract class _FolderModel implements FolderModel {
     required final String salt,
     required final String verificationHash,
     required final DateTime createdAt,
+    final bool allowSave,
   }) = _$FolderModelImpl;
 
   factory _FolderModel.fromJson(Map<String, dynamic> json) =
@@ -256,6 +283,8 @@ abstract class _FolderModel implements FolderModel {
   String get verificationHash; // Base64 encoded hash to verify password
   @override
   DateTime get createdAt;
+  @override
+  bool get allowSave;
 
   /// Create a copy of FolderModel
   /// with the given fields replaced by the non-null parameter values.

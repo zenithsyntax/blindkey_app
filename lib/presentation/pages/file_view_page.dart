@@ -11,6 +11,9 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 // Simple Local Server for Streaming
 class LocalStreamingService {
@@ -84,11 +87,13 @@ class _Range {
 class FileViewPage extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
+  final bool allowSave; // Permission check
 
   const FileViewPage({
     super.key,
     required this.file,
     required this.folderKey,
+    this.allowSave = true,
   });
 
   @override
@@ -112,12 +117,22 @@ class FileViewPage extends HookConsumerWidget {
                 case 'png': newMime = 'image/png'; break;
                 case 'gif': newMime = 'image/gif'; break;
                 case 'webp': newMime = 'image/webp'; break;
+                case 'bmp': newMime = 'image/bmp'; break;
+                case 'tif': case 'tiff': newMime = 'image/tiff'; break;
                 case 'mp4': case 'm4v': case 'mov': newMime = 'video/mp4'; break;
                 case 'avi': newMime = 'video/x-msvideo'; break;
                 case 'mkv': newMime = 'video/x-matroska'; break;
                 case 'webm': newMime = 'video/webm'; break;
-                case 'txt': newMime = 'text/plain'; break;
+                case 'txt': 
+                case 'css': case 'xml': case 'json': case 'yaml': case 'dart': case 'md': case 'csv':
+                  newMime = 'text/plain'; break;
+                case 'html': newMime = 'text/html'; break;
+                case 'svg': newMime = 'image/svg+xml'; break;
                 case 'pdf': newMime = 'application/pdf'; break;
+                case 'doc': case 'docx': newMime = 'application/msword'; break;
+                case 'xls': case 'xlsx': newMime = 'application/vnd.ms-excel'; break;
+                case 'ppt': case 'pptx': newMime = 'application/vnd.ms-powerpoint'; break;
+                case 'mp3': case 'wav': case 'aac': case 'wma': case 'flac': newMime = 'audio/mpeg'; break;
              }
              return meta.copyWith(mimeType: newMime);
           }
@@ -154,7 +169,76 @@ class FileViewPage extends HookConsumerWidget {
     }, [isVideo ? fileDetails.data : null]); // Re-run if video detected
 
     return Scaffold(
-      appBar: AppBar(title: Text(fileDetails.data?.fileName ?? 'File Viewer')),
+      appBar: AppBar(
+        title: Text(fileDetails.data?.fileName ?? 'File Viewer'),
+        actions: [
+          if (allowSave) // Only if permitted
+            IconButton(
+              icon: const Icon(Icons.open_in_new),
+              tooltip: 'Open in External App',
+              onPressed: () async {
+                 if (!fileDetails.hasData) return;
+                 
+                 // Warning: Cannot prevent screenshots in external apps
+                 final confirm = await showDialog<bool>(
+                   context: context,
+                   builder: (context) => AlertDialog(
+                     title: const Text('Leave Secure Vault?'),
+                     content: const Text(
+                       'You are about to open this file in an external application.\n\n'
+                       '• Screenshot protection will be LOST.\n'
+                       '• The file will be temporarily decrypted.\n\n'
+                       'Do you want to proceed?',
+                     ),
+                     actions: [
+                       TextButton(
+                         onPressed: () => Navigator.pop(context, false), 
+                         child: const Text('Cancel'),
+                       ),
+                       TextButton(
+                         onPressed: () => Navigator.pop(context, true), 
+                         child: const Text('Open Externally', style: TextStyle(color: Colors.red)),
+                       ),
+                     ],
+                   ),
+                 );
+                 
+                 if (confirm != true) return;
+
+                 // Decrypt to temp file and open
+                 final vault = ref.read(vaultServiceProvider);
+                 final dir = await getTemporaryDirectory();
+                 final tempPath = '${dir.path}/${fileDetails.data!.fileName}'; // Use real name for extension recognition
+                 final tempFile = File(tempPath);
+                 
+                 if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Decrypting for external view...')));
+                 }
+                 
+                 try {
+                   final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+                   final sink = tempFile.openWrite();
+                   await for (final chunk in stream) {
+                     sink.add(chunk);
+                   }
+                   await sink.flush();
+                   await sink.close();
+                   
+                   final res = await OpenFile.open(tempPath);
+                   if (res.type != ResultType.done) {
+                      if (context.mounted) {
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open file: ${res.message}')));
+                      }
+                   }
+                 } catch (e) {
+                   if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+                   }
+                 }
+              },
+            ),
+        ],
+      ),
       body: Center(
          child: fileDetails.hasError ? Text('Error: ${fileDetails.error}')
          : !fileDetails.hasData ? const CircularProgressIndicator()
@@ -162,13 +246,17 @@ class FileViewPage extends HookConsumerWidget {
            ? (streamingUrl.value != null 
                ? _VideoPlayerView(url: streamingUrl.value!) 
                : const CircularProgressIndicator())
-           : (fileDetails.data!.mimeType.startsWith('image/')
-               ? _ImageView(file: file, folderKey: folderKey)
-               : (fileDetails.data!.mimeType.startsWith('text/')
-                   ? _TextView(file: file, folderKey: folderKey)
-                   : (fileDetails.data!.mimeType == 'application/pdf'
-                       ? _PdfView(file: file, folderKey: folderKey)
-                       : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType)))),
+           : (fileDetails.data!.mimeType.startsWith('image/svg')
+               ? _SvgView(file: file, folderKey: folderKey)
+               : (fileDetails.data!.mimeType.startsWith('image/')
+                   ? _ImageView(file: file, folderKey: folderKey)
+                   : (fileDetails.data!.mimeType.startsWith('text/')
+                       ? _TextView(file: file, folderKey: folderKey) // handles html/json too
+                       : (fileDetails.data!.mimeType == 'application/pdf'
+                           ? _PdfView(file: file, folderKey: folderKey)
+                           : (fileDetails.data!.mimeType.startsWith('audio/')
+                               ? _AudioView(file: file, folderKey: folderKey)
+                               : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType)))))),
       ),
     );
   }
@@ -379,8 +467,15 @@ class _HexFileView extends HookConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Text('Binary Viewer ($mimeType)\nShowing first ${data.length} bytes', 
-             textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Column(
+            children: [
+              Text('Binary Viewer ($mimeType)\nShowing first ${data.length} bytes', 
+                     textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('Format not natively supported. Use the button above to open in an external app.',
+                     style: TextStyle(fontSize: 10, color: Colors.grey)),
+            ],
+          ),
         ),
         Expanded(
           child: ListView.builder(
@@ -420,5 +515,127 @@ class _HexFileView extends HookConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+class _AudioView extends HookConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  const _AudioView({required this.file, required this.folderKey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = useMemoized(() => AudioPlayer());
+    final isPlaying = useState(false);
+    final duration = useState(Duration.zero);
+    final position = useState(Duration.zero);
+    
+    final pathFuture = useMemoized(() async {
+      final vault = ref.read(vaultServiceProvider);
+      final dir = await getTemporaryDirectory();
+      // Use proper extension for player to detect format
+      final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
+      String ext = 'mp3';
+      res.fold((l){}, (r) => ext = r.fileName.split('.').last);
+      
+      final tempPath = '${dir.path}/${file.id}.$ext';
+      final tempFile = File(tempPath);
+      
+      // Overwrite for security/freshness
+      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+      final sink = tempFile.openWrite();
+      await for (final chunk in stream) {
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+      return tempPath;
+    });
+    
+    final pathSnapshot = useFuture(pathFuture);
+    
+    useEffect(() {
+      final sub1 = player.onPlayerStateChanged.listen((state) {
+        isPlaying.value = state == PlayerState.playing;
+      });
+      final sub2 = player.onDurationChanged.listen((d) {
+        duration.value = d;
+      });
+      final sub3 = player.onPositionChanged.listen((p) {
+        position.value = p;
+      });
+      
+      return () {
+        sub1.cancel();
+        sub2.cancel();
+        sub3.cancel();
+        player.dispose();
+         if (pathSnapshot.data != null) {
+           final f = File(pathSnapshot.data!);
+           if (f.existsSync()) f.deleteSync();
+        }
+      };
+    }, [pathSnapshot.data]);
+
+    if (pathSnapshot.hasError) return Center(child: Text('Error: ${pathSnapshot.error}'));
+    if (!pathSnapshot.hasData) return const CircularProgressIndicator();
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.music_note, size: 80, color: Colors.blueAccent),
+          const SizedBox(height: 20),
+          Text(formatDuration(position.value) + " / " + formatDuration(duration.value)),
+          Slider(
+            value: position.value.inSeconds.toDouble().clamp(0, duration.value.inSeconds.toDouble()),
+            max: duration.value.inSeconds.toDouble(),
+            onChanged: (v) {
+              player.seek(Duration(seconds: v.toInt()));
+            },
+          ),
+          IconButton(
+            icon: Icon(isPlaying.value ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 64),
+            onPressed: () {
+               if (isPlaying.value) {
+                 player.pause();
+               } else {
+                 player.play(DeviceFileSource(pathSnapshot.data!));
+               }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+  
+  String formatDuration(Duration d) {
+    return "${d.inMinutes.remainder(60).toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}";
+  }
+}
+
+class _SvgView extends HookConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  const _SvgView({required this.file, required this.folderKey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final contentFuture = useMemoized(() async {
+       final vault = ref.read(vaultServiceProvider);
+       final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+       final bytes = <int>[];
+       await for (final chunk in stream) {
+         bytes.addAll(chunk);
+       }
+       return utf8.decode(bytes);
+    });
+    
+    final snapshot = useFuture(contentFuture);
+    
+    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
+    if (!snapshot.hasData) return const CircularProgressIndicator();
+    
+    return SvgPicture.string(snapshot.data!);
   }
 }

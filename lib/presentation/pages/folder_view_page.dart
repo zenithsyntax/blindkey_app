@@ -13,6 +13,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -50,9 +51,33 @@ class FolderViewPage extends HookConsumerWidget {
                      
                      result.fold(
                        (l) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.toString()))),
-                       (path) {
-                         // Share using share_plus
-                         // We need to add import 'package:share_plus/share_plus.dart';
+                       (path) async {
+                         // 1. Save to Downloads
+                         try {
+                           if (Platform.isAndroid) {
+                             var status = await Permission.storage.status;
+                             if (!status.isGranted) {
+                               status = await Permission.storage.request();
+                             }
+                             
+                             // For Android 11+ Manage Storage
+                             if (await Permission.manageExternalStorage.status.isDenied) {
+                                // optional: request manage permission or rely on legacy/media store
+                             }
+
+                             final downloadDir = Directory('/storage/emulated/0/Download');
+                             if  (await downloadDir.exists()) {
+                               final filename = path.split('/').last;
+                               final newPath = "${downloadDir.path}/$filename";
+                               await File(path).copy(newPath);
+                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Saved to Downloads: $filename")));
+                             }
+                           }
+                         } catch (e) {
+                            print("Save failed: $e");
+                         }
+
+                         // 2. Share
                          Share.shareXFiles([XFile(path)], text: 'Secure BlindKey Package');
                        }
                      );
@@ -88,7 +113,11 @@ class FolderViewPage extends HookConsumerWidget {
                   // Or `FileNotifier` should return `List<DecryptedFileView>`.
                   // For now, let's just show "Encrypted File" or async decrypt.
                   
-                  return _FileThumbnail(file: file, folderKey: folderKey);
+                  return _FileThumbnail(
+                    file: file,
+                    folderKey: folderKey,
+                    allowSave: folder.allowSave,
+                  );
                 },
               );
             },
@@ -220,14 +249,19 @@ class _ShareDialog extends HookWidget {
 class _FileThumbnail extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
+  final bool allowSave;
 
   const _FileThumbnail({
     required this.file,
     required this.folderKey,
+    required this.allowSave,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ... (metadata logic)
+    // I can't replace the whole build method easily.
+    // I will use replace on constructor first.
     // 1. Decrypt Metadata to get MimeType and Name
     final metadataFuture = useMemoized(() async {
       final vault = ref.read(vaultServiceProvider);
@@ -281,7 +315,11 @@ class _FileThumbnail extends HookConsumerWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-               builder: (_) => FileViewPage(file: file, folderKey: folderKey),
+               builder: (_) => FileViewPage(
+                 file: file,
+                 folderKey: folderKey,
+                 allowSave: allowSave,
+               ),
             ),
           );
         },
