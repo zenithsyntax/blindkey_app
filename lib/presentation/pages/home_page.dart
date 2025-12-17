@@ -6,6 +6,7 @@ import 'package:blindkey_app/presentation/pages/folder_view_page.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cryptography/cryptography.dart';
 import 'dart:ui';
@@ -603,128 +604,156 @@ class HomePage extends HookConsumerWidget {
 
     if (result != null && result.files.single.path != null) {
       final path = result.files.single.path!;
-      final passwordController = TextEditingController();
       if (!context.mounted) return;
 
       await showDialog(
         context: context,
-        builder: (context) => BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Dialog(
-            backgroundColor: const Color(0xFF1A1A1A),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: Colors.white.withOpacity(0.08)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.upload_file_rounded,
-                    size: 48,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Unlock Vault',
-                    style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Enter the password to access this vault file',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: Colors.white54,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Password',
-                      hintStyle: GoogleFonts.inter(color: Colors.white30),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+        barrierDismissible: false,
+        builder: (context) => HookConsumer(
+          builder: (context, ref, child) {
+            final passwordController = useTextEditingController();
+            final isLoading = useState(false);
+            final errorText = useState<String?>(null);
+
+            return BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Dialog(
+                backgroundColor: const Color(0xFF1A1A1A),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: Colors.white.withOpacity(0.08)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.upload_file_rounded,
+                        size: 48,
+                        color: Colors.white,
                       ),
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white30),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        try {
-                          await ref
-                              .read(folderNotifierProvider.notifier)
-                              .importFolder(path, passwordController.text);
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Vault imported successfully',
-                                  style: GoogleFonts.inter(),
-                                ),
-                                backgroundColor: Colors.green.shade800,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Import failed: $e',
-                                  style: GoogleFonts.inter(),
-                                ),
-                                backgroundColor: Colors.red.shade800,
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        'Unlock & Import',
+                      const SizedBox(height: 24),
+                      Text(
+                        'Unlock Vault',
                         style: GoogleFonts.inter(
-                          fontSize: 16,
+                          fontSize: 20,
                           fontWeight: FontWeight.w600,
+                          color: Colors.white,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Enter the password to access this vault file',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: true,
+                        enabled: !isLoading.value,
+                        style: GoogleFonts.inter(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Password',
+                          hintStyle: GoogleFonts.inter(color: Colors.white30),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.05),
+                          errorText: errorText.value,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          prefixIcon: const Icon(Icons.lock_outline, color: Colors.white30),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: isLoading.value ? null : () async {
+                            isLoading.value = true;
+                            errorText.value = null;
+                            
+                            await Future.delayed(const Duration(milliseconds: 50));
+                            
+                            try {
+                              await ref
+                                  .read(folderNotifierProvider.notifier)
+                                  .importFolder(path, passwordController.text);
+                              
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Vault imported successfully',
+                                      style: GoogleFonts.inter(),
+                                    ),
+                                    backgroundColor: Colors.green.shade800,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                isLoading.value = false;
+                                // Can show error in text field or snackbar. Keeps snackbar for now but clears loading
+                                // Actually, let's use errorText for better UX
+                                errorText.value = 'Import failed: Incorrect password or corrupted file';
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            disabledBackgroundColor: Colors.white24,
+                            disabledForegroundColor: Colors.white38,
+                          ),
+                          child: isLoading.value 
+                            ? const SizedBox(
+                                height: 20, 
+                                width: 20, 
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)
+                              )
+                            : Text(
+                                'Unlock & Import',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                        ),
+                      ),
+                      if (isLoading.value) ...[
+                         const SizedBox(height: 16),
+                         TextButton(
+                           onPressed: null, // Cannot cancel easily during import if it's atomic
+                           child: Text("Importing...", style: GoogleFonts.inter(color: Colors.white30)),
+                         )
+                      ] else ...[
+                         const SizedBox(height: 16),
+                         TextButton(
+                           onPressed: () => Navigator.pop(context),
+                           child: Text("Cancel", style: GoogleFonts.inter(color: Colors.white54)),
+                         )
+                      ]
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       );
     }
@@ -741,149 +770,183 @@ class HomePage extends HookConsumerWidget {
     WidgetRef ref,
     dynamic folder,
   ) {
-    final passwordController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Dialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withOpacity(0.08)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.lock_rounded,
-                    size: 32,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Unlock Vault',
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  folder.name,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: Colors.white54,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: passwordController,
-                  obscureText: true,
-                  style: GoogleFonts.inter(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Enter Password',
-                    hintStyle: GoogleFonts.inter(color: Colors.white30),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.05),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    ),
-                    prefixIcon: const Icon(Icons.key_rounded, color: Colors.white30),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Row(
+      barrierDismissible: false, // Prevent dismissing while loading if we want, but let's allow if not loading
+      builder: (context) => HookConsumer(
+        builder: (context, ref, child) {
+          final passwordController = useTextEditingController();
+          final isLoading = useState(false);
+          final errorText = useState<String?>(null);
+
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Dialog(
+              backgroundColor: const Color(0xFF1A1A1A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white60,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Cancel',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w500),
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.lock_rounded,
+                        size: 32,
+                        color: Colors.white,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final result = await ref
-                              .read(folderNotifierProvider.notifier)
-                              .unlockFolder(folder.id, passwordController.text);
-                          
-                          if (context.mounted) {
-                            if (result != null && result is SecretKey) {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => FolderViewPage(
-                                    folder: folder,
-                                    folderKey: result,
-                                  ),
-                                ),
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Incorrect password',
-                                    style: GoogleFonts.inter(),
-                                  ),
-                                  backgroundColor: Colors.red.shade800,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          'Unlock',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Unlock Vault',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      folder.name,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      enabled: !isLoading.value,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Enter Password',
+                        hintStyle: GoogleFonts.inter(color: Colors.white30),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        errorText: errorText.value,
+                        errorMaxLines: 2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                        ),
+                        prefixIcon: const Icon(Icons.key_rounded, color: Colors.white30),
+                      ),
+                      onSubmitted: (_) {
+                         // Trigger unlock on enter
+                         if (!isLoading.value) {
+                            // ... duplicate logic or call function
+                         }
+                      },
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isLoading.value ? null : () => Navigator.pop(context),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white60,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: isLoading.value ? null : () async {
+                              isLoading.value = true;
+                              errorText.value = null;
+                              
+                              // Slight delay to ensure UI updates to loading state before potential heavy crypto work
+                              await Future.delayed(const Duration(milliseconds: 50));
+                              
+                              try {
+                                final result = await ref
+                                    .read(folderNotifierProvider.notifier)
+                                    .unlockFolder(folder.id, passwordController.text);
+                                
+                                if (context.mounted) {
+                                  if (result != null && result is SecretKey) {
+                                    Navigator.pop(context);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => FolderViewPage(
+                                          folder: folder,
+                                          folderKey: result,
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    isLoading.value = false;
+                                    errorText.value = 'Incorrect password';
+                                    passwordController.clear();
+                                  }
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  isLoading.value = false;
+                                  errorText.value = 'An error occurred: $e';
+                                }
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              disabledBackgroundColor: Colors.white24,
+                              disabledForegroundColor: Colors.white38,
+                            ),
+                            child: isLoading.value 
+                              ? const SizedBox(
+                                  height: 20, 
+                                  width: 20, 
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2, 
+                                    color: Colors.white70
+                                  )
+                                )
+                              : Text(
+                                  'Unlock',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
