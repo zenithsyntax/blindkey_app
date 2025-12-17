@@ -42,17 +42,11 @@ class FileNotifier extends _$FileNotifier {
   Future<void> loadMore() async {
     // Prevent multiple calls or if no more data
     if (!_hasMore || _isLoadingMore || state.isLoading || state.hasError) return;
-    
-    // We can't update 'state' nicely if it's AsyncValue unless we handle it carefully.
-    // We set a local flag, but that doesn't trigger UI rebuild (unless we made this a custom state class).
-    // However, simpler for now:
-    // Ideally state should be a custom class: FileState(list, isLoadingMore)
-    // But modifying AsyncValue<List> is possible.
-    
+
     _isLoadingMore = true;
-    // Notify listeners? build() returns FutureOr, so we are AsyncValue.
-    // We can't easily notify "isLoadingMore" without changing state type.
-    // Optimization: Just rely on appended data.
+    // We notify listeners implicitly because build() returns FutureOr, but
+    // since we are just appending to the list, we don't need to invalidate the whole state,
+    // just update it.
     
     try {
       final repo = ref.read(fileRepositoryProvider);
@@ -64,18 +58,23 @@ class FileNotifier extends _$FileNotifier {
       result.fold(
         (l) {
            _isLoadingMore = false;
-           // Handle error? Silent fail or snackbar logic in UI
+           // In a real app we might want to show an error or rollback the page count
+           _page--; 
         },
         (newFiles) {
           if (newFiles.length < _limit) _hasMore = false;
           
-          final currentList = state.value ?? [];
-          state = AsyncValue.data([...currentList, ...newFiles]);
+          if (newFiles.isNotEmpty) {
+             final currentList = state.value ?? [];
+             // Update state with new list effectively
+             state = AsyncValue.data([...currentList, ...newFiles]);
+          }
           _isLoadingMore = false;
         }
       );
     } catch (e) {
       _isLoadingMore = false;
+      _page--;
     }
   }
 

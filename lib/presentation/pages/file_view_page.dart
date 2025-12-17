@@ -15,75 +15,6 @@ import 'package:open_file/open_file.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:audioplayers/audioplayers.dart';
 
-// Simple Local Server for Streaming
-class LocalStreamingService {
-  HttpServer? _server;
-  
-  Future<String> startServer(
-    Stream<List<int>> Function(int start, int? end) streamFactory,
-    int fileSize,
-    String mimeType,
-  ) async {
-    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    _server!.listen((HttpRequest request) {
-      // Handle Range Requests for Video seeking
-      final response = request.response;
-      response.headers.contentType = ContentType.parse(mimeType);
-      response.headers.add('Accept-Ranges', 'bytes');
-      
-      final rangeHeader = request.headers.value('range');
-      if (rangeHeader != null) {
-        final range = _parseRange(rangeHeader, fileSize);
-        final start = range.start;
-        final end = range.end;
-        final length = end - start + 1;
-        
-        response.statusCode = HttpStatus.partialContent;
-        response.headers.add('Content-Range', 'bytes $start-$end/$fileSize');
-        response.headers.contentLength = length;
-        
-        // Stream just the requested chunk
-        // Note: Our decryption stream is continuous. 
-        // Seeking in AES-GCM stream is hard without independent blocks.
-        // But our `decryptFileStream` decrypts whole file.
-        // Optimization: `decryptFileRange(start, end)`.
-        // For now, assume linear streaming (bad for seeking but functional).
-        // Or we pipe the whole stream and skip?
-        // Streaming efficiently requires Random Access Decryption.
-        // My Vault implementation uses GCM with 1MB blocks.
-        // I CAN implement random access!
-        
-        response.addStream(streamFactory(start, end)).then((_) => response.close());
-      } else {
-        response.statusCode = HttpStatus.ok;
-        response.headers.contentLength = fileSize;
-        response.addStream(streamFactory(0, fileSize)).then((_) => response.close());
-      }
-    });
-    return 'http://${_server!.address.address}:${_server!.port}/stream';
-  }
-
-  Future<void> stop() async {
-    await _server?.close(force: true);
-  }
-
-  _Range _parseRange(String rangeHeader, int fileSize) {
-    if (rangeHeader.startsWith('bytes=')) {
-      final parts = rangeHeader.substring(6).split('-');
-      final start = int.parse(parts[0]);
-      int end = parts.length > 1 && parts[1].isNotEmpty ? int.parse(parts[1]) : fileSize - 1;
-      return _Range(start, end);
-    }
-    return _Range(0, fileSize - 1);
-  }
-}
-
-class _Range {
-  final int start;
-  final int end;
-  _Range(this.start, this.end);
-}
-
 class FileViewPage extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
@@ -143,30 +74,7 @@ class FileViewPage extends HookConsumerWidget {
     
     final fileDetails = useFuture(fileDetailsFuture);
     
-    // Streaming logic
-    final streamingUrl = useState<String?>(null);
     final isVideo = fileDetails.hasData && (fileDetails.data!.mimeType.startsWith('video'));
-    
-    useEffect(() {
-      if (isVideo) {
-        final service = LocalStreamingService();
-        final vault = ref.read(vaultServiceProvider);
-        
-        service.startServer(
-          (start, end) => vault.decryptFileRange(
-            file: file,
-            folderKey: folderKey,
-            start: start,
-            end: end,
-          ),
-          fileDetails.data!.size,
-          fileDetails.data!.mimeType,
-        ).then((url) => streamingUrl.value = url);
-        
-        return () => service.stop();
-      }
-      return null;
-    }, [isVideo ? fileDetails.data : null]); // Re-run if video detected
 
     return Scaffold(
       appBar: AppBar(
@@ -243,9 +151,7 @@ class FileViewPage extends HookConsumerWidget {
          child: fileDetails.hasError ? Text('Error: ${fileDetails.error}')
          : !fileDetails.hasData ? const CircularProgressIndicator()
          : isVideo 
-           ? (streamingUrl.value != null 
-               ? _VideoPlayerView(url: streamingUrl.value!) 
-               : const CircularProgressIndicator())
+           ? _VideoView(file: file, folderKey: folderKey)
            : (fileDetails.data!.mimeType.startsWith('image/svg')
                ? _SvgView(file: file, folderKey: folderKey)
                : (fileDetails.data!.mimeType.startsWith('image/')
@@ -297,10 +203,75 @@ class _ImageView extends HookConsumerWidget {
   }
 }
 
+// Video Player - decrypts video to temp file and plays it
+class _VideoView extends HookConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  const _VideoView({required this.file, required this.folderKey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pathFuture = useMemoized(() async {
+      final vault = ref.read(vaultServiceProvider);
+      final dir = await getTemporaryDirectory();
+      
+      // Get proper file extension from metadata for format recognition
+      final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
+      String ext = 'mp4'; // default
+      res.fold((l) {}, (meta) {
+        final fileName = meta.fileName;
+        if (fileName.contains('.')) {
+          ext = fileName.split('.').last.toLowerCase();
+        }
+      });
+      
+      final tempPath = '${dir.path}/${file.id}.$ext';
+      final tempFile = File(tempPath);
+      
+      // Always overwrite to ensure freshness/security
+      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+      final sink = tempFile.openWrite();
+      await for (final chunk in stream) {
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+      return tempPath;
+    });
+    
+    final pathSnapshot = useFuture(pathFuture);
+    
+    // Cleanup temp file when widget is disposed
+    useEffect(() {
+      return () {
+        if (pathSnapshot.data != null) {
+          final f = File(pathSnapshot.data!);
+          if (f.existsSync()) {
+            try {
+              f.deleteSync();
+            } catch (e) {
+              debugPrint('Failed to delete temp video file: $e');
+            }
+          }
+        }
+      };
+    }, [pathSnapshot.data]);
+
+    if (pathSnapshot.hasError) {
+      return Center(child: Text('Error preparing video: ${pathSnapshot.error}'));
+    }
+    if (!pathSnapshot.hasData) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return _VideoPlayerView(filePath: pathSnapshot.data!);
+  }
+}
+
 // Minimal Video Player Wrapper
 class _VideoPlayerView extends StatefulWidget {
-  final String url;
-  const _VideoPlayerView({required this.url});
+  final String filePath;
+  const _VideoPlayerView({required this.filePath});
   @override
   State<_VideoPlayerView> createState() => _VideoPlayerViewState();
 }
@@ -308,16 +279,25 @@ class _VideoPlayerView extends StatefulWidget {
 class _VideoPlayerViewState extends State<_VideoPlayerView> {
   late VideoPlayerController _controller;
   bool _initialized = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+    _controller = VideoPlayerController.file(File(widget.filePath))
       ..initialize().then((_) {
-        setState(() {
-          _initialized = true;
-        });
-        _controller.play();
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+          _controller.play();
+        }
+      }).catchError((error) {
+        if (mounted) {
+          setState(() {
+            _error = error.toString();
+          });
+        }
       });
   }
 
@@ -329,9 +309,14 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return const CircularProgressIndicator();
+    if (_error != null) {
+      return Center(child: Text('Error loading video: $_error'));
     }
+    
+    if (!_initialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
     return AspectRatio(
       aspectRatio: _controller.value.aspectRatio,
       child: Stack(
