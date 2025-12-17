@@ -164,24 +164,24 @@ class FileViewPage extends HookConsumerWidget {
            SafeArea(
              child: Center(
                 child: fileDetails.hasError ? Text('Error: ${fileDetails.error}', style: GoogleFonts.inter(color: Colors.red))
-                : !fileDetails.hasData ? const CircularProgressIndicator(color: Colors.white30)
+                : !fileDetails.hasData ? const SizedBox(width: 200, child: LinearProgressIndicator(color: Colors.white30, backgroundColor: Colors.white10))
                 : Hero(
                     tag: file.id,
                     child: Material(
                       type: MaterialType.transparency,
                       child: isVideo 
-                        ? _VideoView(file: file, folderKey: folderKey)
+                        ? _VideoView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
                         : (fileDetails.data!.mimeType.startsWith('image/svg')
-                            ? _SvgView(file: file, folderKey: folderKey)
+                            ? _SvgView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
                             : (fileDetails.data!.mimeType.startsWith('image/')
-                                ? _ImageView(file: file, folderKey: folderKey)
+                                ? _ImageView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
                                 : (fileDetails.data!.mimeType.startsWith('text/')
-                                    ? _TextView(file: file, folderKey: folderKey)
+                                    ? _TextView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
                                     : (fileDetails.data!.mimeType == 'application/pdf'
-                                        ? _PdfView(file: file, folderKey: folderKey)
+                                        ? _PdfView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
                                         : (fileDetails.data!.mimeType.startsWith('audio/')
-                                            ? _AudioView(file: file, folderKey: folderKey)
-                                            : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType)))))),
+                                            ? _AudioView(file: file, folderKey: folderKey, fileSize: fileDetails.data!.size)
+                                            : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType, fileSize: fileDetails.data!.size)))))),
                     ),
                   ),
              ),
@@ -230,31 +230,97 @@ class FileViewPage extends HookConsumerWidget {
   }
 }
 
+class _LoadingProgressView extends StatelessWidget {
+  final double progress;
+  const _LoadingProgressView({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 200, 
+            child: LinearProgressIndicator(
+              value: progress,
+              color: Colors.white30, 
+              backgroundColor: Colors.white10
+            )
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${(progress * 100).toInt()}%',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: Colors.white54,
+              fontFeatures: [const FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ImageView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _ImageView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _ImageView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-     final contentFuture = useMemoized(() async {
-      final vault = ref.read(vaultServiceProvider);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final bytes = <int>[];
-      await for (final chunk in stream) {
-        bytes.addAll(chunk);
-      }
-      return Uint8List.fromList(bytes);
-    });
-    final snapshot = useFuture(contentFuture);
+    final imageBytes = useState<Uint8List?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
+
+    useEffect(() {
+       final vault = ref.read(vaultServiceProvider);
+       int received = 0;
+       bool isCancelled = false;
+       
+       final subscription = vault.decryptFileStream(file: file, folderKey: folderKey).listen(
+         (chunk) {
+            if (isCancelled) return;
+            // We can't easily stream into Image.memory until done for regular images, 
+            // but we need to accumulate bytes.
+            // Using a builder is inefficient re-allocating? 
+            // Just accumulate in list.
+         },
+         onError: (e) {
+            if (!isCancelled) error.value = e;
+         },
+       );
+       
+       // Manually accumulate to avoid closure capture issues with 'subscription'
+       final bytes = <int>[];
+       subscription.onData((chunk) {
+          if (isCancelled) return;
+          bytes.addAll(chunk);
+          received += chunk.length;
+          // Avoid division by zero
+          progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+       });
+       
+       subscription.onDone(() {
+          if (!isCancelled) {
+             imageBytes.value = Uint8List.fromList(bytes);
+          }
+       });
+       
+       return () {
+          isCancelled = true;
+          subscription.cancel();
+       };
+    }, []);
     
-    if (snapshot.hasError) {
-      return Center(child: Text('Error decrypting file: ${snapshot.error}', style: GoogleFonts.inter(color: Colors.white54)));
+    if (error.value != null) {
+      return Center(child: Text('Error decrypting file: ${error.value}', style: GoogleFonts.inter(color: Colors.white54)));
     }
     
-    if (!snapshot.hasData) {
-      // Show loading but keep Hero placeholder if possible, or just loader
-      return const Center(child: CircularProgressIndicator(color: Colors.white30));
+    if (imageBytes.value == null) {
+      return _LoadingProgressView(progress: progress.value);
     }
     
     return InteractiveViewer(
@@ -262,7 +328,7 @@ class _ImageView extends HookConsumerWidget {
       minScale: 0.5,
       maxScale: 4.0,
       child: Image.memory(
-        snapshot.data!,
+        imageBytes.value!,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, color: Colors.white24, size: 50),
       ),
@@ -274,56 +340,76 @@ class _ImageView extends HookConsumerWidget {
 class _VideoView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _VideoView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _VideoView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ... [Same logic as before, just needs dark theme context passed implicitly]
-    // Refactoring fully for succinctness
-    final pathFuture = useMemoized(() async {
-      final vault = ref.read(vaultServiceProvider);
-      final dir = await getTemporaryDirectory();
-      final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
-      String ext = 'mp4'; 
-      res.fold((l) {}, (meta) {
-        final fileName = meta.fileName;
-        if (fileName.contains('.')) {
-          ext = fileName.split('.').last.toLowerCase();
-        }
-      });
-      final tempPath = '${dir.path}/${file.id}.$ext';
-      final tempFile = File(tempPath);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final sink = tempFile.openWrite();
-      await for (final chunk in stream) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-      return tempPath;
-    });
-    
-    final pathSnapshot = useFuture(pathFuture);
+    final videoPath = useState<String?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
     
     useEffect(() {
-      return () {
-        if (pathSnapshot.data != null) {
-          final f = File(pathSnapshot.data!);
-          if (f.existsSync()) {
-            try { f.deleteSync(); } catch (_) {}
+       bool isCancelled = false;
+       String? tempPath;
+       
+       Future<void> load() async {
+          try {
+             final vault = ref.read(vaultServiceProvider);
+             final dir = await getTemporaryDirectory();
+             final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
+             String ext = 'mp4'; 
+             res.fold((l) {}, (meta) {
+                final fileName = meta.fileName;
+                if (fileName.contains('.')) {
+                   ext = fileName.split('.').last.toLowerCase();
+                }
+             });
+             
+             tempPath = '${dir.path}/${file.id}.$ext';
+             final tempFile = File(tempPath!);
+             final sink = tempFile.openWrite();
+             
+             int received = 0;
+             final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+             
+             await for (final chunk in stream) {
+                if (isCancelled) break;
+                sink.add(chunk);
+                received += chunk.length;
+                progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+             }
+             
+             await sink.flush();
+             await sink.close();
+             
+             if (!isCancelled) {
+                videoPath.value = tempPath;
+             }
+          } catch (e) {
+             if (!isCancelled) error.value = e;
           }
-        }
-      };
-    }, [pathSnapshot.data]);
+       }
+       
+       load();
+       
+       return () {
+          isCancelled = true;
+          if (tempPath != null) {
+             final f = File(tempPath!);
+             if (f.existsSync()) try { f.deleteSync(); } catch (_) {}
+          }
+       };
+    }, []);
 
-    if (pathSnapshot.hasError) {
-      return Center(child: Text('Error: ${pathSnapshot.error}', style: GoogleFonts.inter(color: Colors.white54)));
+    if (error.value != null) {
+      return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter(color: Colors.white54)));
     }
-    if (!pathSnapshot.hasData) {
-      return const CircularProgressIndicator(color: Colors.white30);
+    if (videoPath.value == null) {
+      return _LoadingProgressView(progress: progress.value);
     }
 
-    return _VideoPlayerView(filePath: pathSnapshot.data!);
+    return _VideoPlayerView(filePath: videoPath.value!);
   }
 }
 
@@ -419,28 +505,51 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
 class _TextView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _TextView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _TextView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-     final contentFuture = useMemoized(() async {
-      final vault = ref.read(vaultServiceProvider);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final bytes = <int>[];
-      await for (final chunk in stream) {
-        bytes.addAll(chunk);
-      }
-      return utf8.decode(bytes); 
-    });
-    final snapshot = useFuture(contentFuture);
+     final textContent = useState<String?>(null);
+     final error = useState<Object?>(null);
+     final progress = useState<double>(0.0);
+
+    useEffect(() {
+       final vault = ref.read(vaultServiceProvider);
+       int received = 0;
+       bool isCancelled = false;
+       final bytes = <int>[];
+
+       final subscription = vault.decryptFileStream(file: file, folderKey: folderKey).listen(
+         (chunk) {
+            if (isCancelled) return;
+            bytes.addAll(chunk);
+            received += chunk.length;
+            progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+         },
+         onDone: () {
+            if (!isCancelled) {
+               textContent.value = utf8.decode(bytes, allowMalformed: true); 
+            }
+         },
+         onError: (e) {
+            if (!isCancelled) error.value = e;
+         }
+       );
+       
+       return () {
+          isCancelled = true;
+          subscription.cancel();
+       };
+    }, []);
     
-    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: GoogleFonts.inter(color: Colors.red)));
-    if (!snapshot.hasData) return const CircularProgressIndicator(color: Colors.white30);
+    if (error.value != null) return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter(color: Colors.red)));
+    if (textContent.value == null) return _LoadingProgressView(progress: progress.value);
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: SelectableText(
-        snapshot.data!,
+        textContent.value!,
         style: GoogleFonts.robotoMono(
           color: Colors.white70,
           fontSize: 14,
@@ -453,42 +562,63 @@ class _TextView extends HookConsumerWidget {
 class _PdfView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _PdfView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _PdfView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ... [Same logic simpler]
-    final pathFuture = useMemoized(() async {
-      final vault = ref.read(vaultServiceProvider);
-      final dir = await getTemporaryDirectory();
-      final tempPath = '${dir.path}/${file.id}.pdf';
-      final tempFile = File(tempPath);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final sink = tempFile.openWrite();
-      await for (final chunk in stream) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-      return tempPath;
-    });
-    
-    final pathSnapshot = useFuture(pathFuture);
-    
-    useEffect(() {
-      return () {
-        if (pathSnapshot.data != null) {
-           final f = File(pathSnapshot.data!);
-           if (f.existsSync()) f.deleteSync();
-        }
-      };
-    }, [pathSnapshot.data]);
+    final pdfPath = useState<String?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
 
-    if (pathSnapshot.hasError) return Center(child: Text('Error: ${pathSnapshot.error}', style: GoogleFonts.inter()));
-    if (!pathSnapshot.hasData) return const CircularProgressIndicator(color: Colors.white30);
+    useEffect(() {
+       bool isCancelled = false;
+       String? tempPath;
+       
+       Future<void> load() async {
+          try {
+             final vault = ref.read(vaultServiceProvider);
+             final dir = await getTemporaryDirectory();
+             tempPath = '${dir.path}/${file.id}.pdf';
+             final tempFile = File(tempPath!);
+             final sink = tempFile.openWrite();
+             
+             int received = 0;
+             final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+             
+             await for (final chunk in stream) {
+                if (isCancelled) break;
+                sink.add(chunk);
+                received += chunk.length;
+                progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+             }
+             
+             await sink.flush();
+             await sink.close();
+             
+             if (!isCancelled) {
+                pdfPath.value = tempPath;
+             }
+          } catch (e) {
+             if (!isCancelled) error.value = e;
+          }
+       }
+       load();
+       
+       return () {
+          isCancelled = true;
+          if (tempPath != null) {
+             final f = File(tempPath!);
+             if (f.existsSync()) try { f.deleteSync(); } catch (_) {}
+          }
+       };
+    }, []);
+
+    if (error.value != null) return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter()));
+    if (pdfPath.value == null) return _LoadingProgressView(progress: progress.value);
 
     return PDFView(
-      filePath: pathSnapshot.data!,
+      filePath: pdfPath.value!,
       enableSwipe: true,
       swipeHorizontal: false,
       autoSpacing: false,
@@ -503,29 +633,54 @@ class _HexFileView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final String mimeType;
+  final int fileSize;
   
-  const _HexFileView({required this.file, required this.folderKey, required this.mimeType});
+  const _HexFileView({required this.file, required this.folderKey, required this.mimeType, required this.fileSize});
   
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final contentFuture = useMemoized(() async {
+    final hexData = useState<Uint8List?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
+
+    useEffect(() {
       final vault = ref.read(vaultServiceProvider);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+      int received = 0;
+      bool isCancelled = false;
       final bytes = <int>[];
       int count = 0;
-      await for (final chunk in stream) {
-        bytes.addAll(chunk);
-        count += chunk.length;
-        if (count > 10240) break; // Limit to 10KB
-      }
-      return Uint8List.fromList(bytes.sublist(0, bytes.length > 10240 ? 10240 : bytes.length));
-    });
-    final snapshot = useFuture(contentFuture);
+      
+      final subscription = vault.decryptFileStream(file: file, folderKey: folderKey).listen(
+        (chunk) {
+          if (isCancelled) return;
+          
+          if (count < 10240) {
+             bytes.addAll(chunk);
+             count += chunk.length;
+             received += chunk.length;
+             progress.value = (received / 10240).clamp(0.0, 1.0);
+          } else {
+             // We have enough.
+          }
+        },
+        onDone: () {
+           if (!isCancelled) {
+              hexData.value = Uint8List.fromList(bytes.sublist(0, bytes.length > 10240 ? 10240 : bytes.length));
+           }
+        },
+        onError: (e) { if (!isCancelled) error.value = e; }
+      );
+      
+      return () {
+        isCancelled = true;
+        subscription.cancel();
+      };
+    }, []);
 
-    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: GoogleFonts.inter(color: Colors.red)));
-    if (!snapshot.hasData) return const CircularProgressIndicator(color: Colors.white30);
+    if (error.value != null) return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter(color: Colors.red)));
+    if (hexData.value == null) return _LoadingProgressView(progress: progress.value);
 
-    final data = snapshot.data!;
+    final data = hexData.value!;
     
     return Column(
       children: [
@@ -592,53 +747,73 @@ class _HexFileView extends HookConsumerWidget {
 class _AudioView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _AudioView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _AudioView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ... [Same logic simpler]
     final player = useMemoized(() => AudioPlayer());
     final isPlaying = useState(false);
     final duration = useState(Duration.zero);
     final position = useState(Duration.zero);
     
-    final pathFuture = useMemoized(() async {
-      final vault = ref.read(vaultServiceProvider);
-      final dir = await getTemporaryDirectory();
-      final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
-      String ext = 'mp3';
-      res.fold((l){}, (r) => ext = r.fileName.split('.').last);
-      
-      final tempPath = '${dir.path}/${file.id}.$ext';
-      final tempFile = File(tempPath);
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final sink = tempFile.openWrite();
-      await for (final chunk in stream) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-      return tempPath;
-    });
-    
-    final pathSnapshot = useFuture(pathFuture);
+    final audioPath = useState<String?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
     
     useEffect(() {
-      final sub1 = player.onPlayerStateChanged.listen((state) { isPlaying.value = state == PlayerState.playing; });
-      final sub2 = player.onDurationChanged.listen((d) { duration.value = d; });
-      final sub3 = player.onPositionChanged.listen((p) { position.value = p; });
-      
-      return () {
-        sub1.cancel(); sub2.cancel(); sub3.cancel(); player.dispose();
-        if (pathSnapshot.data != null) {
-           final f = File(pathSnapshot.data!);
-           if (f.existsSync()) f.deleteSync();
-        }
-      };
-    }, [pathSnapshot.data]);
+       bool isCancelled = false;
+       String? tempPath;
+       
+       Future<void> load() async {
+          try {
+             final vault = ref.read(vaultServiceProvider);
+             final dir = await getTemporaryDirectory();
+             final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
+             String ext = 'mp3';
+             res.fold((l){}, (r) => ext = r.fileName.split('.').last);
+             
+             tempPath = '${dir.path}/${file.id}.$ext';
+             final tempFile = File(tempPath!);
+             final sink = tempFile.openWrite();
+             
+             int received = 0;
+             final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+             
+             await for (final chunk in stream) {
+                if (isCancelled) break;
+                sink.add(chunk);
+                received += chunk.length;
+                progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+             }
+             
+             await sink.flush();
+             await sink.close();
+             
+             if (!isCancelled) audioPath.value = tempPath;
+             
+          } catch (e) {
+             if (!isCancelled) error.value = e;
+          }
+       }
+       load();
+       
+       final sub1 = player.onPlayerStateChanged.listen((state) { isPlaying.value = state == PlayerState.playing; });
+       final sub2 = player.onDurationChanged.listen((d) { duration.value = d; });
+       final sub3 = player.onPositionChanged.listen((p) { position.value = p; });
+       
+       return () {
+         isCancelled = true;
+         sub1.cancel(); sub2.cancel(); sub3.cancel(); player.dispose();
+         if (tempPath != null) {
+            final f = File(tempPath!);
+            if (f.existsSync()) try { f.deleteSync(); } catch (_) {}
+         }
+       };
+    }, []);
 
-    if (pathSnapshot.hasError) return Center(child: Text('Error: ${pathSnapshot.error}', style: GoogleFonts.inter()));
-    if (!pathSnapshot.hasData) return const CircularProgressIndicator(color: Colors.white30);
+    if (error.value != null) return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter()));
+    if (audioPath.value == null) return _LoadingProgressView(progress: progress.value);
 
     return Center(
       child: Column(
@@ -681,7 +856,7 @@ class _AudioView extends HookConsumerWidget {
                if (isPlaying.value) {
                  player.pause();
                } else {
-                 player.play(DeviceFileSource(pathSnapshot.data!));
+                 player.play(DeviceFileSource(audioPath.value!));
                }
             },
           ),
@@ -698,26 +873,47 @@ class _AudioView extends HookConsumerWidget {
 class _SvgView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
-  const _SvgView({required this.file, required this.folderKey});
+  final int fileSize;
+  const _SvgView({required this.file, required this.folderKey, required this.fileSize});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final contentFuture = useMemoized(() async {
+    final svgContent = useState<String?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
+
+    useEffect(() {
        final vault = ref.read(vaultServiceProvider);
-       final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+       int received = 0;
+       bool isCancelled = false;
        final bytes = <int>[];
-       await for (final chunk in stream) {
-         bytes.addAll(chunk);
-       }
-       return utf8.decode(bytes);
-    });
+
+       final subscription = vault.decryptFileStream(file: file, folderKey: folderKey).listen(
+         (chunk) {
+            if (isCancelled) return;
+            bytes.addAll(chunk);
+            received += chunk.length;
+            progress.value = fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+         },
+         onDone: () {
+            if (!isCancelled) {
+               svgContent.value = utf8.decode(bytes);
+            }
+         },
+         onError: (e) {
+            if (!isCancelled) error.value = e;
+         }
+       );
+       
+       return () {
+          isCancelled = true;
+          subscription.cancel();
+       };
+    }, []);
     
-    final snapshot = useFuture(contentFuture);
+    if (error.value != null) return Center(child: Text('Error: ${error.value}', style: GoogleFonts.inter()));
+    if (svgContent.value == null) return _LoadingProgressView(progress: progress.value);
     
-    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: GoogleFonts.inter()));
-    if (!snapshot.hasData) return const CircularProgressIndicator(color: Colors.white30);
-    
-    return SvgPicture.string(snapshot.data!);
+    return SvgPicture.string(svgContent.value!);
   }
 }
-
