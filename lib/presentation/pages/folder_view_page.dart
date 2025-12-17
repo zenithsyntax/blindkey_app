@@ -95,30 +95,48 @@ class FolderViewPage extends HookConsumerWidget {
               if (files.isEmpty) {
                 return const Center(child: Text('No encrypted files. Upload one!'));
               }
-              return GridView.builder(
-                padding: const EdgeInsets.all(8),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: files.length,
-                itemBuilder: (context, index) {
-                  final file = files[index];
-                  // If we don't have metadata decrypted yet, we can't show name.
-                  // Wait, FileModel only has ENCRYPTED metadata.
-                  // We need to decrypt metadata to show filename!
-                  // This is a UI performance potential bottleneck.
-                  // We should probably cache decrypted metadata in a Provider?
-                  // Or `FileNotifier` should return `List<DecryptedFileView>`.
-                  // For now, let's just show "Encrypted File" or async decrypt.
-                  
-                  return _FileThumbnail(
-                    file: file,
-                    folderKey: folderKey,
-                    allowSave: folder.allowSave,
-                  );
+              return NotificationListener<ScrollNotification>(
+                onNotification: (scrollInfo) {
+                  if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 200) {
+                     // Check if not already loading and has more
+                     // Access notifier without watching state to avoid rebuilds during scroll?
+                     // Actually, we can just call it. State check is inside.
+                     ref.read(fileNotifierProvider(folder.id).notifier).loadMore();
+                  }
+                  return false;
                 },
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  // Add +1 for loader if hasMore. 
+                  // Accessing notifier state is tricky if we don't watch it.
+                  // But 'filesAsync' is the list. 
+                  // We need to know 'hasMore' from the notifier.
+                  // Since we didn't expose hasMore in the AsyncValue, we might check the notifier directly?
+                  // ref.read(..).hasMore.
+                  // But reading notifier in build is fine.
+                  itemCount: files.length + (ref.read(fileNotifierProvider(folder.id).notifier).hasMore ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index == files.length) {
+                       return const Center(child: Padding(
+                         padding: EdgeInsets.all(8.0),
+                         child: CircularProgressIndicator(strokeWidth: 2),
+                       ));
+                    }
+                    
+                    final file = files[index];
+                    return _FileThumbnail(
+                      key: ValueKey(file.id),
+                      file: file,
+                      folderKey: folderKey,
+                      allowSave: folder.allowSave,
+                    );
+                  },
+                ),
               );
             },
             error: (e, s) => Center(child: Text('Error: $e')),
@@ -252,6 +270,7 @@ class _FileThumbnail extends HookConsumerWidget {
   final bool allowSave;
 
   const _FileThumbnail({
+    super.key,
     required this.file,
     required this.folderKey,
     required this.allowSave,
@@ -259,6 +278,11 @@ class _FileThumbnail extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    useAutomaticKeepAlive(wantKeepAlive: true);
+    
+    final file = this.file;
+    final folderKey = this.folderKey;
+    final allowSave = this.allowSave;
     // ... (metadata logic)
     // I can't replace the whole build method easily.
     // I will use replace on constructor first.

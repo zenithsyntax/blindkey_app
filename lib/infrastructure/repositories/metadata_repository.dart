@@ -20,9 +20,16 @@ class MetadataRepository implements FolderRepository {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE folders ADD COLUMN allowSave INTEGER DEFAULT 1');
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -32,7 +39,8 @@ class MetadataRepository implements FolderRepository {
         name TEXT NOT NULL,
         salt TEXT NOT NULL,
         verificationHash TEXT NOT NULL,
-        createdAt TEXT NOT NULL
+        createdAt TEXT NOT NULL,
+        allowSave INTEGER DEFAULT 1
       )
     ''');
     
@@ -87,7 +95,12 @@ class MetadataRepository implements FolderRepository {
   Future<Either<Failure, Unit>> saveFolder(FolderModel folder) async {
     try {
       final db = await database;
-      await db.insert('folders', folder.toJson());
+      // Convert boolean allowSave to integer 1 or 0 for SQLite
+      final json = folder.toJson();
+      final Map<String, dynamic> dbData = Map.from(json);
+      dbData['allowSave'] = (folder.allowSave) ? 1 : 0;
+      
+      await db.insert('folders', dbData);
       return right(unit);
     } catch (e) {
       return left(Failure.databaseError(e.toString()));
@@ -112,7 +125,10 @@ class MetadataRepository implements FolderRepository {
       final db = await database;
       final maps = await db.query('folders', where: 'id = ?', whereArgs: [id]);
       if (maps.isNotEmpty) {
-        return right(FolderModel.fromJson(maps.first));
+        // Convert integer allowSave back to boolean
+        final Map<String, dynamic> data = Map.from(maps.first);
+        data['allowSave'] = (data['allowSave'] as int?) == 1;
+        return right(FolderModel.fromJson(data));
       } else {
         return left(const Failure.databaseError('Folder not found'));
       }
@@ -126,7 +142,11 @@ class MetadataRepository implements FolderRepository {
     try {
       final db = await database;
       final maps = await db.query('folders', orderBy: 'createdAt DESC');
-      return right(maps.map((e) => FolderModel.fromJson(e)).toList());
+      return right(maps.map((e) {
+         final Map<String, dynamic> data = Map.from(e);
+         data['allowSave'] = (data['allowSave'] as int?) == 1;
+         return FolderModel.fromJson(data);
+      }).toList());
     } catch (e) {
       return left(Failure.databaseError(e.toString()));
     }

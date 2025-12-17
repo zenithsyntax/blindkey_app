@@ -62,10 +62,17 @@ class FileRepositoryImpl implements FileRepository {
   }
 
   @override
-  Future<Either<Failure, List<FileModel>>> getFiles(String folderId) async {
+  Future<Either<Failure, List<FileModel>>> getFiles(String folderId, {int? limit, int? offset}) async {
     try {
       final db = await metadataRepository.database;
-      final maps = await db.query('files', where: 'folderId = ?', whereArgs: [folderId]);
+      final maps = await db.query(
+        'files', 
+        where: 'folderId = ?', 
+        whereArgs: [folderId],
+        limit: limit,
+        offset: offset,
+        orderBy: 'rowid DESC' // or createdAt if available, matching file list order
+      );
       return right(maps.map((e) => FileModel.fromJson(e)).toList());
     } catch (e) {
       return left(Failure.databaseError(e.toString()));

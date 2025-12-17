@@ -10,39 +10,87 @@ part 'file_notifier.g.dart';
 
 @riverpod
 class FileNotifier extends _$FileNotifier {
+  // Pagination State
+  int _page = 0;
+  static const int _limit = 20;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  
+  // Getters for UI
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
+
   @override
   FutureOr<List<FileModel>> build(String folderId) async {
+    _page = 0;
+    _hasMore = true;
+    _isLoadingMore = false;
+    
+    // Initial fetch
     final repo = ref.watch(fileRepositoryProvider);
-    final result = await repo.getFiles(folderId);
+    final result = await repo.getFiles(folderId, limit: _limit, offset: 0);
+    
     return result.fold(
       (failure) => throw failure,
-      (files) => files,
+      (files) {
+        if (files.length < _limit) _hasMore = false;
+        return files;
+      },
     );
   }
 
-  Future<void> uploadFiles(List<File> files, FolderModel folder, SecretKey folderKey) async {
-    // We update state optimistically or show progress?
-    // "Show real-time progress bar per file"
-    // We should probably expose a separate provider for Upload Progress.
-    // Or we can add a transient state here? 
-    // Usually, Uploads are managed by a separate Controller/Provider that UI listens to.
+  Future<void> loadMore() async {
+    // Prevent multiple calls or if no more data
+    if (!_hasMore || _isLoadingMore || state.isLoading || state.hasError) return;
     
+    // We can't update 'state' nicely if it's AsyncValue unless we handle it carefully.
+    // We set a local flag, but that doesn't trigger UI rebuild (unless we made this a custom state class).
+    // However, simpler for now:
+    // Ideally state should be a custom class: FileState(list, isLoadingMore)
+    // But modifying AsyncValue<List> is possible.
+    
+    _isLoadingMore = true;
+    // Notify listeners? build() returns FutureOr, so we are AsyncValue.
+    // We can't easily notify "isLoadingMore" without changing state type.
+    // Optimization: Just rely on appended data.
+    
+    try {
+      final repo = ref.read(fileRepositoryProvider);
+      _page++;
+      final offset = _page * _limit;
+      
+      final result = await repo.getFiles(folderId, limit: _limit, offset: offset);
+      
+      result.fold(
+        (l) {
+           _isLoadingMore = false;
+           // Handle error? Silent fail or snackbar logic in UI
+        },
+        (newFiles) {
+          if (newFiles.length < _limit) _hasMore = false;
+          
+          final currentList = state.value ?? [];
+          state = AsyncValue.data([...currentList, ...newFiles]);
+          _isLoadingMore = false;
+        }
+      );
+    } catch (e) {
+      _isLoadingMore = false;
+    }
+  }
+
+  Future<void> uploadFiles(List<File> files, FolderModel folder, SecretKey folderKey) async {
     final vault = ref.read(vaultServiceProvider);
     
-    // For simplicity, we just run them one by one or parallel?
-    // "Encrypted one-by-one".
-    
     for (final file in files) {
-      // Start encryption
-      // We need to track progress.
-      // Ideally, we have a `UploadProgressNotifier`.
-      // Let's trigger the upload via a different provider `uploadNotifierProvider(folderId)`.
       ref.read(uploadProgressProvider.notifier).startUpload(file, folder, folderKey);
     }
   }
 
-  // Refresh
+  // Refresh resets everything
   void refresh() {
+    _page = 0;
+    _hasMore = true;
     ref.invalidateSelf();
   }
 }
