@@ -45,162 +45,163 @@ class FolderViewPage extends HookConsumerWidget {
     }, [scrollController]);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
-      extendBodyBehindAppBar: true, 
-      appBar: AppBar(
-        centerTitle: true,
-        backgroundColor: Colors.black.withOpacity(0.5),
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          folder.name,
-          style: GoogleFonts.inter(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.ios_share_rounded, color: Colors.white70, size: 22),
-            tooltip: 'Export Vault',
-            onPressed: () async {
-               await showDialog(
-                 context: context,
-                 builder: (context) => _ShareDialog(
-                   onExport: (expiry, allowSave) {
-                     showDialog(
-                       context: context,
-                       barrierDismissible: false,
-                       builder: (context) => _ExportProgressDialog(
-                         folder: folder,
-                         folderKey: folderKey,
-                         expiry: expiry,
-                         allowSave: allowSave,
-                       ),
-                     );
-                   },
-                 ),
-               );
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
+      backgroundColor: const Color(0xFF0F0F0F), // Deep black background
       body: Stack(
         children: [
-          // Background Gradient
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF141414),
-                    const Color(0xFF0F0F0F),
-                    const Color(0xFF0F0505), // Deep red tint at bottom
-                  ],
+          CustomScrollView(
+            controller: scrollController,
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverAppBar.large(
+                expandedHeight: 120,
+                backgroundColor: const Color(0xFF0F0F0F),
+                surfaceTintColor: Colors.transparent,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
                 ),
+                title: Text(
+                  folder.name,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                centerTitle: false,
+                actions: [
+                   IconButton(
+                    icon: const Icon(Icons.share_rounded, color: Colors.white70),
+                    tooltip: 'Share Folder',
+                    onPressed: () async {
+                       await showDialog(
+                         context: context,
+                         builder: (context) => _ShareDialog(
+                           onExport: (expiry, allowSave) {
+                             showDialog(
+                               context: context,
+                               barrierDismissible: false,
+                               builder: (context) => _ExportProgressDialog(
+                                 folder: folder,
+                                 folderKey: folderKey,
+                                 expiry: expiry,
+                                 allowSave: allowSave,
+                               ),
+                             );
+                           },
+                         ),
+                       );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
               ),
-            ),
-          ),
-          
-          filesAsync.when(
-            data: (files) {
-              if (files.isEmpty) {
-                return _buildEmptyState(context);
-              }
               
-              return GridView.builder(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 100, 16, 80), // Top padding for AppBar
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.85,
-                ),
-                itemCount: files.length + (ref.read(fileNotifierProvider(folder.id).notifier).hasMore ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == files.length) {
-                     return const Center(child: Padding(
-                       padding: EdgeInsets.all(8.0),
-                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white30),
-                     ));
+              filesAsync.when(
+                data: (files) {
+                  if (files.isEmpty) {
+                     return SliverFillRemaining(
+                       child: Center(
+                         child: Column(
+                           mainAxisSize: MainAxisSize.min,
+                           children: [
+                             Icon(Icons.folder_open_rounded, size: 64, color: Colors.white.withOpacity(0.05)),
+                             const SizedBox(height: 16),
+                             Text(
+                               'No encrypted files yet',
+                               style: GoogleFonts.inter(color: Colors.white30, fontSize: 14),
+                             ),
+                           ],
+                         ),
+                       ),
+                     );
                   }
                   
-                  final file = files[index];
-                  return _FileThumbnail(
-                    key: ValueKey(file.id),
-                    file: file,
-                    folderKey: folderKey,
-                    allowSave: folder.allowSave,
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.85, // Taller cards
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          if (index == files.length) {
+                             // This is tricky inside a Grid. Usually, loading spinner is a separate sliver at bottom.
+                             // For simplicity in Grid, we might just not show it or show a placeholder.
+                             // Better approach: Use a SliverToBoxAdapter below the grid for the loader.
+                             return const SizedBox.shrink(); 
+                          }
+                          final file = files[index];
+                          return _FileThumbnail(
+                            key: ValueKey(file.id),
+                            file: file,
+                            folderKey: folderKey,
+                            allowSave: folder.allowSave,
+                          );
+                        },
+                        childCount: files.length,
+                      ),
+                    ),
                   );
                 },
-              );
-            },
-            error: (e, s) => Center(
-              child: Text(
-                'Could not load files',
-                style: GoogleFonts.inter(color: Colors.white54),
+                error: (e, s) => SliverFillRemaining(child: Center(child: Text('Error: $e', style: const TextStyle(color: Colors.red)))),
+                loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Colors.white24))),
               ),
-            ),
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: Colors.white30),
-            ),
+              
+              // Bottom loader if loading more
+              if (filesAsync.valueOrNull != null && ref.read(fileNotifierProvider(folder.id).notifier).hasMore)
+                 const SliverToBoxAdapter(
+                   child: Padding(
+                     padding: EdgeInsets.all(24.0),
+                     child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24)),
+                   ),
+                 ),
+                 
+              const SliverPadding(padding: EdgeInsets.only(bottom: 100)), // Bottom spacing for FAB
+            ],
           ),
           
           // Upload Progress Overlay
           if (uploadProgress.isNotEmpty)
             Positioned(
               bottom: 100,
-              left: 20,
-              right: 20,
+              left: 16,
+              right: 16,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A).withOpacity(0.9),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     padding: const EdgeInsets.all(16),
-                    color: const Color(0xFF1A1A1A).withOpacity(0.9),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: uploadProgress.entries.map((e) {
-                         return Padding(
-                           padding: const EdgeInsets.symmetric(vertical: 4),
-                           child: Row(
-                            children: [
-                              const Icon(Icons.cloud_upload_outlined, size: 16, color: Colors.white70),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: e.value,
-                                    backgroundColor: Colors.white10,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFEF5350)),
-                                  ),
-                                ),
+                        return Row(
+                          children: [
+                            const Icon(Icons.cloud_upload_rounded, size: 16, color: Colors.white70),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                value: e.value,
+                                backgroundColor: Colors.white10,
+                                valueColor: const AlwaysStoppedAnimation(Colors.blueAccent),
+                                borderRadius: BorderRadius.circular(2),
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '${(e.value * 100).toInt()}%',
-                                style: GoogleFonts.robotoMono(fontSize: 12, color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                         );
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '${(e.value * 100).toInt()}%',
+                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70, fontFeatures: [const FontFeature.tabularFigures()]),
+                            ),
+                          ],
+                        );
                       }).toList(),
                     ),
                   ),
@@ -211,34 +212,26 @@ class FolderViewPage extends HookConsumerWidget {
       ),
       floatingActionButton: uploadProgress.isNotEmpty 
         ? null 
-        : Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: FloatingActionButton.extended(
-              onPressed: () async {
-                final result = await FilePicker.platform.pickFiles(
-                  allowMultiple: true,
-                  withReadStream: false, 
-                );
-              
-                if (result != null) {
-                  final files = result.paths.whereType<String>().map((e) => File(e)).toList();
-                  if (files.isEmpty) return;
-                  
-                  // Validation Logic (Limit 10, Size 100MB, Folder 500MB)
-                  // Simplified for brevity, kept consistent
-                  _handleUpload(context, ref, files);
-                }
-              },
-              backgroundColor: const Color(0xFFC62828),
-              foregroundColor: Colors.white,
-              elevation: 4,
-              icon: const Icon(Icons.add_photo_alternate_rounded),
-              label: Text(
-                'Upload', 
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, letterSpacing: -0.2)
-              ),
-            ),
-        ),
+        : FloatingActionButton.extended(
+            backgroundColor: const Color(0xFFC62828),
+            foregroundColor: Colors.white,
+            elevation: 4,
+            icon: const Icon(Icons.add_rounded),
+            label: Text('Upload', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            onPressed: () async {
+              final result = await FilePicker.platform.pickFiles(
+                allowMultiple: true,
+                withReadStream: false, 
+              );
+            
+              if (result != null) {
+                final files = result.paths.whereType<String>().map((e) => File(e)).toList();
+                if (files.isEmpty) return;
+                
+                await _handleUpload(context, ref, files);
+              }
+            },
+          ),
     );
   }
 
@@ -484,23 +477,32 @@ class _FileThumbnail extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     useAutomaticKeepAlive(wantKeepAlive: true);
     final isMounted = useIsMounted();
+    
+    // State for metadata and image
     final metadataState = useState<FileMetadata?>(null);
     final imageBytesState = useState<Uint8List?>(null);
+    // Track if we should show a loader for image
     final isImageLoading = useState(false);
 
     useEffect(() {
       bool isCancelled = false;
+
       Future<void> load() async {
         if (isCancelled) return;
+        
         try {
           final vault = ref.read(vaultServiceProvider);
+          
+          // 1. Decrypt Metadata
           final metaRes = await vault.decryptMetadata(file: file, folderKey: folderKey);
           if (isCancelled || !isMounted()) return;
           
           final meta = metaRes.getOrElse(() => throw Exception("Decryption failed"));
           metadataState.value = meta;
           
+          // 2. Determine if Image
           String mime = meta.mimeType;
+          // Fix legacy mime types
           if (mime == 'application/octet-stream') {
              final ext = meta.fileName.split('.').last.toLowerCase();
              switch (ext) {
@@ -513,80 +515,113 @@ class _FileThumbnail extends HookConsumerWidget {
           
           if (mime.startsWith('image/')) {
             isImageLoading.value = true;
+            
             final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
             final bytes = <int>[];
+            
+            // OPTIMIZATION: Check cancellation during stream loop
             await for (final chunk in stream) {
               if (isCancelled || !isMounted()) break;
               bytes.addAll(chunk);
+              
+              // Optional: If image is huge, maybe break early?
+              // For now, full load.
             }
+            
             if (!isCancelled && isMounted()) {
               imageBytesState.value = Uint8List.fromList(bytes);
             }
             if (isMounted()) isImageLoading.value = false;
           }
+          
         } catch (e) {
-          if (isMounted()) isImageLoading.value = false;
+          if (isMounted()) {
+             // Handle error if needed
+             isImageLoading.value = false;
+          }
         }
       }
-      load();
-      return () => isCancelled = true;
-    }, [file.id]);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-      ),
-      clipBehavior: Clip.antiAlias,
+      load();
+
+      return () {
+        isCancelled = true;
+      };
+    }, [file.id]); // Re-run if file ID changes
+
+    return Hero(
+      tag: file.id,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                 builder: (_) => FileViewPage(
-                   file: file,
-                   folderKey: folderKey,
-                   allowSave: allowSave,
-                 ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
               ),
-            );
-          },
-          splashColor: Colors.white.withOpacity(0.1),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _buildContent(metadataState.value, imageBytesState.value, isImageLoading.value),
-              
-              // Gradient Overlay
-              Positioned(
-                left: 0, right: 0, bottom: 0,
-                height: 40,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                PageRouteBuilder(
+                  opaque: false, // Important for Hero
+                  barrierColor: Colors.black, // Background during transition
+                  pageBuilder: (_, animation, __) => FadeTransition(
+                    opacity: animation,
+                    child: FileViewPage(
+                      file: file,
+                      folderKey: folderKey,
+                      allowSave: allowSave,
                     ),
                   ),
                 ),
-              ),
-              
-              // Filename
-              Positioned(
-                left: 10, right: 10, bottom: 8,
-                child: Text(
-                  metadataState.value?.fileName ?? '',
-                  style: GoogleFonts.inter(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
+              );
+            },
+            child: Stack(
+              children: [
+                // Background / Content
+                Positioned.fill(
+                  child: _buildContent(metadataState.value, imageBytesState.value, isImageLoading.value),
                 ),
-              )
-            ],
+                // Footer Gradient for Text
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.8),
+                        ],
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+                    child: Text(
+                      metadataState.value?.fileName ?? '...',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.9),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+              ],
+            ),
           ),
         ),
       ),
@@ -614,26 +649,29 @@ class _FileThumbnail extends HookConsumerWidget {
     }
 
     if (mime.startsWith('image/')) {
-       if (isLoadingImg) return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white10));
+       if (isLoadingImg) {
+         return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white10));
+       }
        if (imgBytes != null) {
          return Image.memory(
            imgBytes,
            fit: BoxFit.cover,
-           errorBuilder: (_,__,___) => const Center(child: Icon(Icons.broken_image, color: Colors.white24)),
-           cacheWidth: 250, 
+           errorBuilder: (_,__,___) => const Center(child: Icon(Icons.broken_image_rounded, color: Colors.white24)),
+           // Optimization: Resize in memory cache to save RAM
+           cacheWidth: 300, 
          );
        }
-       return const Center(child: Icon(Icons.image, size: 32, color: Colors.white24));
+       return const Center(child: Icon(Icons.image_rounded, size: 32, color: Colors.white24));
     } else if (mime.startsWith('video/')) {
-       return const Center(child: Icon(Icons.play_circle_outline_rounded, size: 40, color: Color(0xFFEF5350)));
+       return const Center(child: Icon(Icons.movie_rounded, size: 32, color: Colors.redAccent));
     } else if (mime == 'application/pdf') {
-       return const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 36, color: Colors.white30));
+       return const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 32, color: Colors.red));
     } else if (mime.startsWith('text/')) {
-       return const Center(child: Icon(Icons.description_rounded, size: 36, color: Colors.white30));
+       return const Center(child: Icon(Icons.description_rounded, size: 32, color: Colors.blueGrey));
     } else if (mime.startsWith('audio/')) {
        return const Center(child: Icon(Icons.headphones_rounded, size: 36, color: Colors.blueAccent));
     } else {
-       return const Center(child: Icon(Icons.insert_drive_file_rounded, size: 36, color: Colors.white24));
+       return const Center(child: Icon(Icons.insert_drive_file_rounded, size: 32, color: Colors.grey));
     }
   }
 }

@@ -165,19 +165,25 @@ class FileViewPage extends HookConsumerWidget {
              child: Center(
                 child: fileDetails.hasError ? Text('Error: ${fileDetails.error}', style: GoogleFonts.inter(color: Colors.red))
                 : !fileDetails.hasData ? const CircularProgressIndicator(color: Colors.white30)
-                : isVideo 
-                  ? _VideoView(file: file, folderKey: folderKey)
-                  : (fileDetails.data!.mimeType.startsWith('image/svg')
-                      ? _SvgView(file: file, folderKey: folderKey)
-                      : (fileDetails.data!.mimeType.startsWith('image/')
-                          ? _ImageView(file: file, folderKey: folderKey)
-                          : (fileDetails.data!.mimeType.startsWith('text/')
-                              ? _TextView(file: file, folderKey: folderKey)
-                              : (fileDetails.data!.mimeType == 'application/pdf'
-                                  ? _PdfView(file: file, folderKey: folderKey)
-                                  : (fileDetails.data!.mimeType.startsWith('audio/')
-                                      ? _AudioView(file: file, folderKey: folderKey)
-                                      : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType)))))),
+                : Hero(
+                    tag: file.id,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: isVideo 
+                        ? _VideoView(file: file, folderKey: folderKey)
+                        : (fileDetails.data!.mimeType.startsWith('image/svg')
+                            ? _SvgView(file: file, folderKey: folderKey)
+                            : (fileDetails.data!.mimeType.startsWith('image/')
+                                ? _ImageView(file: file, folderKey: folderKey)
+                                : (fileDetails.data!.mimeType.startsWith('text/')
+                                    ? _TextView(file: file, folderKey: folderKey)
+                                    : (fileDetails.data!.mimeType == 'application/pdf'
+                                        ? _PdfView(file: file, folderKey: folderKey)
+                                        : (fileDetails.data!.mimeType.startsWith('audio/')
+                                            ? _AudioView(file: file, folderKey: folderKey)
+                                            : _HexFileView(file: file, folderKey: folderKey, mimeType: fileDetails.data!.mimeType)))))),
+                    ),
+                  ),
              ),
            ),
         ],
@@ -247,7 +253,8 @@ class _ImageView extends HookConsumerWidget {
     }
     
     if (!snapshot.hasData) {
-      return const CircularProgressIndicator(color: Colors.white30);
+      // Show loading but keep Hero placeholder if possible, or just loader
+      return const Center(child: CircularProgressIndicator(color: Colors.white30));
     }
     
     return InteractiveViewer(
@@ -262,6 +269,7 @@ class _ImageView extends HookConsumerWidget {
     );
   }
 }
+
 
 class _VideoView extends HookConsumerWidget {
   final FileModel file;
