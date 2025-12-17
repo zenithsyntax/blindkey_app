@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
+import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
 import 'package:blindkey_app/presentation/pages/file_view_page.dart';
@@ -51,46 +52,20 @@ class FolderViewPage extends HookConsumerWidget {
                await showDialog(
                  context: context,
                  builder: (context) => _ShareDialog(
-                   onExport: (expiry, allowSave) async {
-                     final vault = ref.read(vaultServiceProvider);
-                     final result = await vault.exportFolder(
-                       folder: folder,
-                       key: folderKey,
-                       expiry: expiry,
-                       allowSave: allowSave,
-                     );
+                   onExport: (expiry, allowSave) {
+                     // Close the share dialog options
+                     // Note: The dialog itself handles pop in its onPressed, but here we invoke logic.
+                     // The _ShareDialog calls onExport AFTER popping.
                      
-                     result.fold(
-                       (l) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.toString()))),
-                       (path) async {
-                         // 1. Save to Downloads
-                         try {
-                           if (Platform.isAndroid) {
-                             var status = await Permission.storage.status;
-                             if (!status.isGranted) {
-                               status = await Permission.storage.request();
-                             }
-                             
-                             // For Android 11+ Manage Storage
-                             if (await Permission.manageExternalStorage.status.isDenied) {
-                                // optional: request manage permission or rely on legacy/media store
-                             }
-
-                             final downloadDir = Directory('/storage/emulated/0/Download');
-                             if  (await downloadDir.exists()) {
-                               final filename = path.split('/').last;
-                               final newPath = "${downloadDir.path}/$filename";
-                               await File(path).copy(newPath);
-                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Saved to Downloads: $filename")));
-                             }
-                           }
-                         } catch (e) {
-                            print("Save failed: $e");
-                         }
-
-                         // 2. Share
-                         Share.shareXFiles([XFile(path)], text: 'Secure BlindKey Package');
-                       }
+                     showDialog(
+                       context: context,
+                       barrierDismissible: false,
+                       builder: (context) => _ExportProgressDialog(
+                         folder: folder,
+                         folderKey: folderKey,
+                         expiry: expiry,
+                         allowSave: allowSave,
+                       ),
                      );
                    },
                  ),
@@ -169,25 +144,71 @@ class FolderViewPage extends HookConsumerWidget {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await FilePicker.platform.pickFiles(
-            allowMultiple: true,
-            withReadStream: false, // We use path
-          );
-          
-          if (result != null) {
-            final files = result.paths.whereType<String>().map((e) => File(e)).toList();
-            // Start upload
-            ref.read(fileNotifierProvider(folder.id).notifier).uploadFiles(
-              files,
-              folder,
-              folderKey,
+      floatingActionButton: uploadProgress.isNotEmpty 
+        ? null 
+        : FloatingActionButton(
+          onPressed: () async {
+            final result = await FilePicker.platform.pickFiles(
+              allowMultiple: true,
+              withReadStream: false, // We use path
             );
-          }
-        },
-        child: const Icon(Icons.upload_file),
-      ),
+          
+            if (result != null) {
+              final files = result.paths.whereType<String>().map((e) => File(e)).toList();
+              
+              // 1. Check Max Files per Batch
+              if (files.length > 10) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('You can only select up to 10 files at a time.')),
+                );
+                return;
+              }
+
+              // 2. Check each file size (Max 100MB)
+              int newBatchSize = 0;
+              for (final f in files) {
+                final len = await f.length();
+                if (len > 100 * 1024 * 1024) {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                     SnackBar(content: Text('File ${f.path.split(Platform.pathSeparator).last} is too large (>100MB).')),
+                   );
+                   return;
+                }
+                newBatchSize += len;
+              }
+
+              // 3. Check Folder Capacity (Max 500MB)
+              final repo = ref.read(fileRepositoryProvider);
+              final sizeRes = await repo.getFolderTotalSize(folder.id);
+              
+              // Handle result purely
+              bool canUpload = false;
+              await sizeRes.fold(
+                (l) async {
+                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not verify folder quota: ${l.toString()}')));
+                },
+                (currentSize) async {
+                  if (currentSize + newBatchSize > 500 * 1024 * 1024) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       SnackBar(content: Text('Folder capacity reached (500MB). Current: ${(currentSize/1024/1024).toStringAsFixed(1)}MB')),
+                     );
+                  } else {
+                    canUpload = true;
+                  }
+                }
+              );
+
+              if (canUpload) {
+                ref.read(fileNotifierProvider(folder.id).notifier).uploadFiles(
+                  files,
+                  folder,
+                  folderKey,
+                );
+              }
+            }
+          },
+          child: const Icon(Icons.upload_file),
+        ),
     );
   }
 
@@ -434,5 +455,170 @@ class _FileThumbnail extends HookConsumerWidget {
     } else {
        return const Center(child: Icon(Icons.insert_drive_file, size: 40, color: Colors.grey));
     }
+  }
+}
+
+class _ExportProgressDialog extends HookConsumerWidget {
+  final FolderModel folder;
+  final SecretKey folderKey;
+  final DateTime? expiry;
+  final bool allowSave;
+
+  const _ExportProgressDialog({
+    required this.folder,
+    required this.folderKey,
+    required this.expiry,
+    required this.allowSave,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progress = useState(0.0);
+    final status = useState("Initializing...");
+    final resultPath = useState<String?>(null);
+    final error = useState<String?>(null);
+    
+    useEffect(() {
+      final vault = ref.read(vaultServiceProvider);
+      // Listen to the stream
+      final subscription = vault.exportFolder(
+        folder: folder,
+        key: folderKey,
+        expiry: expiry,
+        allowSave: allowSave,
+      ).listen(
+        (event) {
+          if (event is ExportProgress) {
+            progress.value = event.progress;
+            status.value = event.message;
+          } else if (event is ExportSuccess) {
+            progress.value = 1.0;
+            status.value = "Export Complete";
+            resultPath.value = event.path;
+          } else if (event is ExportFailure) {
+            error.value = event.error;
+          }
+        },
+        onError: (e) {
+          error.value = e.toString();
+        },
+      );
+      
+      return subscription.cancel;
+    }, []);
+
+    return AlertDialog(
+      title: const Text("Exporting .blindkey"),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (error.value != null) ...[
+               const Center(child: Icon(Icons.error_outline, color: Colors.red, size: 48)),
+               const SizedBox(height: 16),
+               Text("Error: ${error.value}", style: const TextStyle(color: Colors.red)),
+            ] else if (resultPath.value != null) ...[
+               const Center(child: Icon(Icons.check_circle_outline, color: Colors.green, size: 48)),
+               const SizedBox(height: 16),
+               Center(child: Text("Successfully created ${folder.name}.blindkey", textAlign: TextAlign.center)),
+            ] else ...[
+               Text(status.value),
+               const SizedBox(height: 8),
+               LinearProgressIndicator(
+                 value: progress.value,
+                 backgroundColor: Colors.grey[800],
+                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+               ),
+               const SizedBox(height: 4),
+               Align(
+                 alignment: Alignment.centerRight, 
+                 child: Text("${(progress.value * 100).toInt()}%", style: const TextStyle(fontSize: 12))
+               ),
+            ]
+          ],
+        ),
+      ),
+      actions: resultPath.value != null 
+          ? [
+             TextButton(
+               onPressed: () => Navigator.pop(context), 
+               child: const Text("Close"),
+             ),
+             ElevatedButton.icon(
+               onPressed: () async {
+                 await _saveToDownloads(context, resultPath.value!);
+               },
+               icon: const Icon(Icons.download),
+               label: const Text("Save to Downloads"),
+             ),
+             FilledButton.icon(
+               onPressed: () {
+                 Share.shareXFiles([XFile(resultPath.value!)], text: 'Secure BlindKey Package');
+               },
+               icon: const Icon(Icons.share),
+               label: const Text("Share"),
+             ),
+            ]
+          : [
+             if (error.value != null)
+               TextButton(
+                 onPressed: () => Navigator.pop(context), 
+                 child: const Text("Close"),
+               )
+          ],
+    );
+  }
+
+  Future<void> _saveToDownloads(BuildContext context, String path) async {
+       try {
+         // Determine download directory
+         Directory? downloadDir;
+         if (Platform.isAndroid) {
+            downloadDir = Directory('/storage/emulated/0/Download');
+            if (!await downloadDir.exists()) {
+               downloadDir = null; // Fallback? or Try finding it
+            }
+            
+            // Permissions
+            var status = await Permission.storage.status;
+            if (!status.isGranted) {
+              await Permission.storage.request();
+            }
+         } else if (Platform.isWindows) {
+            // Windows download path usually in user profile
+            // Not handled in original code, but good to add if needed.
+         }
+         
+         if (downloadDir != null) {
+             final filename = path.split(Platform.pathSeparator).last;
+             final newPath = "${downloadDir.path}/$filename";
+             
+             // Check if exists
+             if (await File(newPath).exists()) {
+                // Rename or overwrite? Overwrite for now as user requested download.
+             }
+             
+             await File(path).copy(newPath);
+             
+             if (context.mounted) {
+               ScaffoldMessenger.of(context).showSnackBar(
+                 SnackBar(
+                   content: Text("Saved to Downloads/$filename"),
+                   backgroundColor: Colors.green,
+                 )
+               );
+             }
+         } else {
+             if (context.mounted) {
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not find Downloads folder")));
+             }
+         }
+       } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Save failed: $e"), backgroundColor: Colors.red));
+          }
+       }
   }
 }

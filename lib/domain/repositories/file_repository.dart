@@ -6,4 +6,5 @@ abstract class FileRepository {
   Future<Either<Failure, List<FileModel>>> getFiles(String folderId, {int? limit, int? offset});
   Future<Either<Failure, Unit>> saveFileModel(FileModel file);
   Future<Either<Failure, Unit>> deleteFile(String fileId);
+  Future<Either<Failure, int>> getFolderTotalSize(String folderId);
 }

@@ -1,3 +1,4 @@
+import 'dart:io' as io;
 import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:blindkey_app/domain/repositories/file_repository.dart';
@@ -93,6 +94,39 @@ class FileRepositoryImpl implements FileRepository {
       final db = await metadataRepository.database;
       await db.insert('files', file.toJson());
       return right(unit);
+    } catch (e) {
+      return left(Failure.databaseError(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, int>> getFolderTotalSize(String folderId) async {
+    try {
+      final db = await metadataRepository.database;
+      final ids = await db.query(
+        'files',
+        columns: ['id'],
+        where: 'folderId = ?',
+        whereArgs: [folderId],
+      );
+
+      final vaultPathRes = await fileStorageService.createEncryptedFileDir();
+      return vaultPathRes.fold(
+        (Failure l) => left(l),
+        (dir) async {
+          int totalSize = 0;
+          for (final row in ids) {
+            final id = row['id'] as String;
+            // Use aliased io.File to ensure correct type
+            final file = io.File('$dir/$id.enc'); 
+            if (await file.exists()) {
+              final len = await file.length();
+              totalSize += len;
+            }
+          }
+          return right(totalSize);
+        },
+      );
     } catch (e) {
       return left(Failure.databaseError(e.toString()));
     }

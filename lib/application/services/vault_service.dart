@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
@@ -15,6 +16,24 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+
+abstract class ExportStatus {}
+
+class ExportProgress extends ExportStatus {
+  final double progress; // 0.0 to 1.0
+  final String message;
+  ExportProgress(this.progress, this.message);
+}
+
+class ExportSuccess extends ExportStatus {
+  final String path;
+  ExportSuccess(this.path);
+}
+
+class ExportFailure extends ExportStatus {
+  final String error;
+  ExportFailure(this.error);
+}
 
 class VaultService {
   final FolderRepository _folderRepository;
@@ -384,108 +403,80 @@ class VaultService {
     }
   }
 
-  Future<Either<Failure, String>> exportFolder({
+  Stream<ExportStatus> exportFolder({
     required FolderModel folder,
     required SecretKey key, 
     required DateTime? expiry,
     required bool allowSave,
-  }) async {
+  }) async* {
     try {
       final salt = base64Decode(folder.salt);
-      // Key provided directly
       
       // 1. Get all files
       final filesRes = await _fileRepository.getFiles(folder.id);
-      if (filesRes.isLeft()) return left(const Failure.unexpected("Could not read files"));
+      if (filesRes.isLeft()) {
+        yield ExportFailure("Could not read files");
+        return;
+      }
       final files = filesRes.getOrElse(() => []);
 
-      final archive = Archive();
+      yield ExportProgress(0.05, "Preparing files...");
+
+      // 2. Prepare Metadata for Isolate
+      // We need to decrypt metadata here to check validity and prepare export items
+      final exportItems = <_IsolateExportItem>[];
+      final keyBytes = await key.extractBytes();
       
-      // 2. Add files and metadata
-      // Structure:
-      // /metadata.json.enc (Encrypted List<FileMetadata> + Folder Info?)
-      // /files/{id}.enc
-      
-      final exportMetadataList = <FileMetadata>[];
-      
-      for (final file in files) {
-        // Decrypt current metadata to get details and DEK
+      for (var i = 0; i < files.length; i++) {
+        final file = files[i];
         final encMeta = base64Decode(file.encryptedMetadata);
         final metaRes = await _cryptoService.decryptData(encryptedData: encMeta, key: key);
-        if (metaRes.isLeft()) continue; // Skip corrupted
         
-        final metaJson = utf8.decode(metaRes.getOrElse(() => []));
-        final originalMeta = FileMetadata.fromJson(jsonDecode(metaJson));
-        
-        // Create Export Metadata with new permissions
-        final exportMeta = originalMeta.copyWith(
-           expiryDate: expiry,
-           allowSaveToDownloads: allowSave,
-           // encryptedFilePath is local path. In zip it should be relative.
-           encryptedFilePath: 'files/${file.id}.enc',
-        );
-        exportMetadataList.add(exportMeta);
-        
-        // Add physical file to archive
-        final fileObj = File(originalMeta.encryptedFilePath);
-        if (await fileObj.exists()) {
-          final bytes = await fileObj.readAsBytes();
-          archive.addFile(ArchiveFile('files/${file.id}.enc', bytes.length, bytes));
+        if (metaRes.isRight()) {
+          final metaJson = utf8.decode(metaRes.getOrElse(() => []));
+          final originalMeta = FileMetadata.fromJson(jsonDecode(metaJson));
+          
+          exportItems.add(_IsolateExportItem(
+            id: file.id,
+            originalEncryptedPath: originalMeta.encryptedFilePath,
+            originalMetadataJson: metaJson,
+          ));
+        }
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      
+      // 3. Spawn Isolate
+      final receivePort = ReceivePort();
+      
+      await Isolate.spawn(
+        _isolateExportEntry,
+        _IsolateExportArgs(
+          sendPort: receivePort.sendPort,
+          tempDirPath: tempDir.path,
+          folderName: folder.name,
+          folderId: folder.id,
+          folderVerificationHash: folder.verificationHash,
+          folderSalt: salt,
+          folderKeyBytes: keyBytes,
+          exportItems: exportItems,
+          expiry: expiry,
+          allowSave: allowSave,
+        ),
+      );
+      
+      // 4. Listen to Isolate
+      await for (final message in receivePort) {
+        if (message is ExportStatus) {
+           yield message;
+           if (message is ExportSuccess || message is ExportFailure) {
+             break;
+           }
         }
       }
       
-      // 3. Encrypt Export Metadata List
-      // We also need Folder Info (Name, Salt, Verification) to reconstruct FolderModel on import.
-      // And we need to know the SALT to derive the key to decrypt this metadata!
-      // CAUTION: If we put Salt inside the encrypted file, we can't get it.
-      // Salt must be plaintext in the zip or header.
-      // Let's put `folder.json` (plaintext) with Salt and Name?
-      // Requirement: "No readable data in header" -> "Metadata also encrypted".
-      // "No plaintext filenames".
-      // BUT we need Salt to derive key.
-      // Salt is not "data". It's a crypto parameter.
-      // However, to be strict: "Every byte... encrypted". This is impossible if we need Salt.
-      // UNLESS: The password generates the Salt? No.
-      // Taking "Every byte encrypted" literally means entire file is one blob.
-      // We can prepend Salt (32 bytes) to the blob. Salt is effectively random noise.
-      // So: [Salt][Encrypted Zip].
-      
-      final manifest = {
-        'id': folder.id,
-        'name': folder.name,
-        'verificationHash': folder.verificationHash, // To verify password on import
-        'files': exportMetadataList.map((e) => e.toJson()).toList(),
-      };
-      
-      final manifestJson = jsonEncode(manifest);
-      final encManifestRes = await _cryptoService.encryptData(
-        data: utf8.encode(manifestJson), 
-        key: key
-      );
-      
-      if (encManifestRes.isLeft()) return left(const Failure.encryptionError("Export failed"));
-      final encManifest = encManifestRes.getOrElse(() => []);
-      
-      archive.addFile(ArchiveFile('manifest.enc', encManifest.length, encManifest));
-      
-      final zipBytes = ZipEncoder().encode(archive);
-      if (zipBytes == null) return left(const Failure.unexpected("Zip failed"));
-      
-      // Prepend Salt
-      final finalBytes = [...salt, ...zipBytes];
-      
-      // 4. Save to temp .blindkey file
-      final tempDir = await _storageService.createEncryptedFileDir(); // reusing vault dir or temp
-      // Using temp dir
-      final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/${folder.name}.blindkey';
-      final fileObj = File(path);
-      await fileObj.writeAsBytes(finalBytes);
-      
-      return right(path);
-      
     } catch (e) {
-      return left(Failure.unexpected(e.toString()));
+      yield ExportFailure(e.toString());
     }
   }
 
@@ -794,8 +785,151 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
     await outSink.close();
     
     args.checkSendPort.send("DONE");
-    
   } catch (e) {
     args.checkSendPort.send("ERROR: $e");
   }
 }
+
+class _IsolateExportItem {
+  final String id;
+  final String originalEncryptedPath;
+  final String originalMetadataJson;
+  
+  _IsolateExportItem({
+    required this.id,
+    required this.originalEncryptedPath,
+    required this.originalMetadataJson,
+  });
+}
+
+class _IsolateExportArgs {
+  final SendPort sendPort;
+  final String tempDirPath;
+  final String folderName;
+  final String folderId;
+  final String folderVerificationHash;
+  final List<int> folderSalt;
+  final List<int> folderKeyBytes;
+  final List<_IsolateExportItem> exportItems;
+  final DateTime? expiry;
+  final bool allowSave;
+
+  _IsolateExportArgs({
+    required this.sendPort,
+    required this.tempDirPath,
+    required this.folderName,
+    required this.folderId,
+    required this.folderVerificationHash,
+    required this.folderSalt,
+    required this.folderKeyBytes,
+    required this.exportItems,
+    required this.expiry,
+    required this.allowSave,
+  });
+}
+
+Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
+  Directory? stagingDir;
+  try {
+    args.sendPort.send(ExportProgress(0.1, "Initializing export..."));
+    
+    // Create staging area
+    stagingDir = Directory('${args.tempDirPath}/export_staging_${const Uuid().v4()}');
+    await stagingDir.create();
+    
+    final zipPath = '${stagingDir.path}/archive.zip';
+    final encoder = ZipFileEncoder();
+    encoder.create(zipPath);
+    
+    final exportMetadataList = <FileMetadata>[];
+    
+    // Process Files
+    final totalFiles = args.exportItems.length;
+    
+    for (var i = 0; i < totalFiles; i++) {
+        final item = args.exportItems[i];
+        
+        // Report Progress
+        // Range 0.1 to 0.8
+        final progress = 0.1 + ((i / totalFiles) * 0.7);
+        args.sendPort.send(ExportProgress(progress, "Processing file ${i + 1}/$totalFiles..."));
+        
+        final originalMeta = FileMetadata.fromJson(jsonDecode(item.originalMetadataJson));
+        
+        // Create Export Metadata
+        final exportMeta = originalMeta.copyWith(
+           expiryDate: args.expiry,
+           allowSaveToDownloads: args.allowSave,
+           encryptedFilePath: 'files/${item.id}.enc',
+        );
+        exportMetadataList.add(exportMeta);
+        
+        // Add physical file to ZIP
+        final fileObj = File(item.originalEncryptedPath);
+        if (await fileObj.exists()) {
+           // We are moving ENCRYPTED file 'as-is' into the zip.
+           // This is efficient (no re-encryption).
+           await encoder.addFile(fileObj, 'files/${item.id}.enc');
+        }
+    }
+    
+    args.sendPort.send(ExportProgress(0.85, "Finalizing package..."));
+    
+    // Create Manifest
+    final manifest = {
+      'id': args.folderId,
+      'name': args.folderName,
+      'verificationHash': args.folderVerificationHash, 
+      'files': exportMetadataList.map((e) => e.toJson()).toList(),
+    };
+    
+    final manifestJson = jsonEncode(manifest);
+    
+    // Encrypt Manifest manually using AesGcm
+    final algorithm = AesGcm.with256bits();
+    final secretKey = SecretKey(args.folderKeyBytes);
+    final nonce = await algorithm.newNonce(); // Random nonce
+    
+    final secretBox = await algorithm.encrypt(
+      utf8.encode(manifestJson),
+      secretKey: secretKey,
+      nonce: nonce,
+    );
+    
+    final encManifest = secretBox.concatenation();
+    
+    // Write manifest to temp file then add to zip
+    final manifestFile = File('${stagingDir.path}/manifest.enc');
+    await manifestFile.writeAsBytes(encManifest);
+    await encoder.addFile(manifestFile, 'manifest.enc');
+    
+    encoder.close();
+    
+    args.sendPort.send(ExportProgress(0.9, "Writing .blindkey file..."));
+    
+    // Create Final .blindkey file [Salt][ZipFileContent]
+    final finalPath = '${args.tempDirPath}/${args.folderName}.blindkey';
+    final finalFile = File(finalPath);
+    final sink = finalFile.openWrite();
+    
+    // Write Salt
+    sink.add(args.folderSalt);
+    
+    // Stream Zip Content
+    final zipFile = File(zipPath);
+    await sink.addStream(zipFile.openRead());
+    
+    await sink.flush();
+    await sink.close();
+    
+    args.sendPort.send(ExportSuccess(finalPath));
+    
+  } catch (e) {
+    args.sendPort.send(ExportFailure(e.toString()));
+  } finally {
+     if (stagingDir != null && await stagingDir.exists()) {
+       await stagingDir.delete(recursive: true);
+     }
+  }
+}
+
