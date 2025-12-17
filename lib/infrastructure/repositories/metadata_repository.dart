@@ -100,7 +100,11 @@ class MetadataRepository implements FolderRepository {
       final Map<String, dynamic> dbData = Map.from(json);
       dbData['allowSave'] = (folder.allowSave) ? 1 : 0;
       
-      await db.insert('folders', dbData);
+      await db.insert(
+        'folders', 
+        dbData, 
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
       return right(unit);
     } catch (e) {
       return left(Failure.databaseError(e.toString()));

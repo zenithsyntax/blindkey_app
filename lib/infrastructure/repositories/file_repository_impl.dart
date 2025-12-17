@@ -5,6 +5,7 @@ import 'package:blindkey_app/domain/repositories/file_repository.dart';
 import 'package:blindkey_app/infrastructure/repositories/metadata_repository.dart';
 import 'package:blindkey_app/infrastructure/storage/file_storage_service.dart';
 import 'package:dartz/dartz.dart';
+import 'package:sqflite/sqflite.dart';
 
 class FileRepositoryImpl implements FileRepository {
   final MetadataRepository metadataRepository;
@@ -127,6 +128,17 @@ class FileRepositoryImpl implements FileRepository {
           return right(totalSize);
         },
       );
+    } catch (e) {
+      return left(Failure.databaseError(e.toString()));
+    }
+  }
+  @override
+  Future<Either<Failure, int>> getFileCount(String folderId) async {
+    try {
+      final db = await metadataRepository.database;
+      final result = await db.rawQuery('SELECT COUNT(*) FROM files WHERE folderId = ?', [folderId]);
+      final count = Sqflite.firstIntValue(result) ?? 0;
+      return right(count);
     } catch (e) {
       return left(Failure.databaseError(e.toString()));
     }
