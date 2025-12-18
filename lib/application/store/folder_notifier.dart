@@ -10,18 +10,15 @@ class FolderNotifier extends _$FolderNotifier {
   FutureOr<List<FolderModel>> build() async {
     final repo = ref.watch(folderRepositoryImplProvider);
     final result = await repo.getFolders();
-    return result.fold(
-      (failure) => throw failure, 
-      (folders) => folders,
-    );
+    return result.fold((failure) => throw failure, (folders) => folders);
   }
 
   Future<void> createFolder(String name, String password) async {
     final vault = ref.read(vaultServiceProvider);
     state = const AsyncValue.loading();
-    
+
     final result = await vault.createFolder(name, password);
-    
+
     result.fold(
       (failure) => state = AsyncValue.error(failure, StackTrace.current),
       (_) {
@@ -30,7 +27,7 @@ class FolderNotifier extends _$FolderNotifier {
       },
     );
   }
-  
+
   Future<void> deleteFolder(String id) async {
     final repo = ref.read(folderRepositoryImplProvider);
     await repo.deleteFolder(id);
@@ -42,37 +39,41 @@ class FolderNotifier extends _$FolderNotifier {
     final currentState = state.value;
     if (currentState == null) return;
 
-    final folder = currentState.firstWhere((f) => f.id == id, orElse: () => throw Exception("Folder not found"));
+    final folder = currentState.firstWhere(
+      (f) => f.id == id,
+      orElse: () => throw Exception("Folder not found"),
+    );
     final updatedFolder = folder.copyWith(name: newName);
-    
+
     await repo.saveFolder(updatedFolder);
     ref.invalidateSelf();
   }
 
   Future<void> importFolder(String path, String password) async {
     final vault = ref.read(vaultServiceProvider);
-    state = const AsyncValue.loading();
-    
+    // Preserve current state instead of setting to loading
+    // This prevents the home page from showing error state if import fails
+    final previousState = state;
+
     final result = await vault.importBlindKey(path, password);
-    
+
     result.fold(
-      (failure) => state = AsyncValue.error(failure, StackTrace.current),
+      (failure) {
+        // Don't set global state to error - let the dialog handle it
+        // Restore previous state to prevent error from persisting
+        if (previousState.hasValue) {
+          state = previousState;
+        } else {
+          // If there was no previous state, just invalidate to rebuild
+          ref.invalidateSelf();
+        }
+        // Throw the failure so the dialog can catch and display it
+        throw failure;
+      },
       (_) {
         ref.invalidateSelf(); // Refresh list to show imported folder
       },
     );
-     // If error, we threw via state error, but caller might want to catch?
-     // Actually, setting state to error is good for UI feedback if UI watches state.
-     // But my HomePage dialog logic tries to catch errors. 
-     // The `result.fold` above sets GLOBAL state error.
-     // Better pattern: return the result or throw so caller handles it, 
-     // but ALSO refresh if success.
-     
-     if (result.isLeft()) {
-       final failure = result.fold((l) => l, (r) => null);
-       // Throwing here so the Dialog can catch it and show SnackBar
-       throw failure!;
-     }
   }
 
   Future<dynamic> unlockFolder(String folderId, String password) async {
@@ -80,12 +81,15 @@ class FolderNotifier extends _$FolderNotifier {
     // We can get it from current state if valid.
     final currentState = state.value;
     if (currentState == null) return null;
-    
-    final folder = currentState.firstWhere((f) => f.id == folderId, orElse: () => throw Exception("Folder not found"));
-    
+
+    final folder = currentState.firstWhere(
+      (f) => f.id == folderId,
+      orElse: () => throw Exception("Folder not found"),
+    );
+
     final vault = ref.read(vaultServiceProvider);
     final result = await vault.verifyPasswordAndGetKey(folder, password);
-    
+
     return result.fold(
       (failure) => null, // Return null on failure (wrong password)
       (key) => key, // Return Key on success

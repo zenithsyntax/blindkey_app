@@ -15,7 +15,7 @@ class FileNotifier extends _$FileNotifier {
   static const int _limit = 20;
   bool _hasMore = true;
   bool _isLoadingMore = false;
-  
+
   // Getters for UI
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
@@ -25,53 +25,56 @@ class FileNotifier extends _$FileNotifier {
     _page = 0;
     _hasMore = true;
     _isLoadingMore = false;
-    
+
     // Initial fetch
     final repo = ref.watch(fileRepositoryProvider);
     final result = await repo.getFiles(folderId, limit: _limit, offset: 0);
-    
-    return result.fold(
-      (failure) => throw failure,
-      (files) async {
-        if (files.length < _limit) _hasMore = false;
-        return await _processExpiredFiles(files);
-      },
-    );
+
+    return result.fold((failure) => throw failure, (files) async {
+      if (files.length < _limit) _hasMore = false;
+      // Process expired files (currently just returns all files, including expired)
+      return await _processExpiredFiles(files);
+    });
   }
 
   Future<void> loadMore() async {
     // Prevent multiple calls or if no more data
-    if (!_hasMore || _isLoadingMore || state.isLoading || state.hasError) return;
+    if (!_hasMore || _isLoadingMore || state.isLoading || state.hasError)
+      return;
 
     _isLoadingMore = true;
     // We notify listeners implicitly because build() returns FutureOr, but
     // since we are just appending to the list, we don't need to invalidate the whole state,
     // just update it.
-    
+
     try {
       final repo = ref.read(fileRepositoryProvider);
       _page++;
       final offset = _page * _limit;
-      
-      final result = await repo.getFiles(folderId, limit: _limit, offset: offset);
-      
+
+      final result = await repo.getFiles(
+        folderId,
+        limit: _limit,
+        offset: offset,
+      );
+
       await result.fold(
         (l) async {
-           _isLoadingMore = false;
-           _page--; 
+          _isLoadingMore = false;
+          _page--;
         },
         (newFiles) async {
           if (newFiles.length < _limit) _hasMore = false;
-          
+
           if (newFiles.isNotEmpty) {
-             // Filter expired
-             final validFiles = await _processExpiredFiles(newFiles);
-             
-             final currentList = state.value ?? [];
-             state = AsyncValue.data([...currentList, ...validFiles]);
+            // Process files (including expired ones - they'll be shown with indicator)
+            final processedFiles = await _processExpiredFiles(newFiles);
+
+            final currentList = state.value ?? [];
+            state = AsyncValue.data([...currentList, ...processedFiles]);
           }
           _isLoadingMore = false;
-        }
+        },
       );
     } catch (e) {
       _isLoadingMore = false;
@@ -80,26 +83,22 @@ class FileNotifier extends _$FileNotifier {
   }
 
   Future<List<FileModel>> _processExpiredFiles(List<FileModel> files) async {
-    final repo = ref.read(fileRepositoryProvider);
-    final validFiles = <FileModel>[];
-    
-    for (final file in files) {
-      if (file.expiryDate != null && DateTime.now().toUtc().isAfter(file.expiryDate!.toUtc())) {
-        // Expired - Delete
-        await repo.deleteFile(file.id);
-        // Do not add to validFiles
-      } else {
-        validFiles.add(file);
-      }
-    }
-    return validFiles;
+    // Don't delete expired files immediately - show them with expired indicator
+    // They will be deleted when user tries to access them (handled in vault_service)
+    return files;
   }
 
-  Future<void> uploadFiles(List<File> files, FolderModel folder, SecretKey folderKey) async {
+  Future<void> uploadFiles(
+    List<File> files,
+    FolderModel folder,
+    SecretKey folderKey,
+  ) async {
     final vault = ref.read(vaultServiceProvider);
-    
+
     for (final file in files) {
-      ref.read(uploadProgressProvider.notifier).startUpload(file, folder, folderKey);
+      ref
+          .read(uploadProgressProvider.notifier)
+          .startUpload(file, folder, folderKey);
     }
   }
 
@@ -118,31 +117,36 @@ class UploadProgress extends _$UploadProgress {
   @override
   Map<String, double> build() => {};
 
-  Future<void> startUpload(File file, FolderModel folder, SecretKey folderKey) async {
+  Future<void> startUpload(
+    File file,
+    FolderModel folder,
+    SecretKey folderKey,
+  ) async {
     final vault = ref.read(vaultServiceProvider);
     final path = file.path;
-    
+
     state = {...state, path: 0.0};
-    
+
     try {
       final stream = vault.encryptAndSaveFile(
         originalFile: file,
         folderId: folder.id,
         folderKey: folderKey,
       );
-      
+
       await for (final progress in stream) {
         state = {...state, path: progress};
       }
-      
+
       // Done
       state = {...state};
-      state.remove(path); // Remove from progress list when done? Or mark as done?
+      state.remove(
+        path,
+      ); // Remove from progress list when done? Or mark as done?
       // Maybe keep it for a bit.
-      
+
       // Invalidate file list of that folder
       ref.invalidate(fileNotifierProvider(folder.id));
-      
     } catch (e) {
       // Handle error state
       state = {...state, path: -1.0}; // -1 for error

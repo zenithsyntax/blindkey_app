@@ -48,80 +48,87 @@ class VaultService {
     this._storageService,
   );
 
-  Future<Either<Failure, Unit>> createFolder(String name, String password) async {
+  Future<Either<Failure, Unit>> createFolder(
+    String name,
+    String password,
+  ) async {
     try {
-      final salt = await _cryptoService.generateRandomKey().then((k) => k.extractBytes());
+      final salt = await _cryptoService.generateRandomKey().then(
+        (k) => k.extractBytes(),
+      );
       final key = await _cryptoService.deriveKeyFromPassword(password, salt);
       final keyBytes = await key.extractBytes();
-      
-      // We store HASH of the key to verify password. 
-      // Actually, standard is: Store Salt. 
-      // On Login: Derive Key(Pass, Salt). 
-      // To Verify: We need a "Verification Hash". 
+
+      // We store HASH of the key to verify password.
+      // Actually, standard is: Store Salt.
+      // On Login: Derive Key(Pass, Salt).
+      // To Verify: We need a "Verification Hash".
       // Usually, we verify by successfully decrypting a known value (e.g. metadata).
       // Or we store Hash(Key).
       // Let's store Hash(Key) as verificationHash.
       // But we shouldn't store Hash(Key) directly if Key is used for encryption?
       // Better: Derive TWO keys from password? Or Key and Auth Key?
       // Simple approach: Store Hash(Password, Salt). Use Key(Password, Salt) for encryption.
-      // Wait, Argon2 produces a key. 
+      // Wait, Argon2 produces a key.
       // If we use the SAME parameters, we get the same 32 bytes.
       // If we store Hash(OutputBytes), and attacker gets DB, they have Hash(Key).
-      // If they crack Hash(Key), they have Key. 
+      // If they crack Hash(Key), they have Key.
       // So verificationHash should be a SEPARATE derivation or hash of the key.
       // Let's just use a known encrypted string.
       // "FolderModel" has `verificationHash`.
-      // Let's treat `verificationHash` as: Encrypt("BlindKey", Key). 
+      // Let's treat `verificationHash` as: Encrypt("BlindKey", Key).
       // If we can decrypt it and get "BlindKey", password is correct.
-      
+
       // IMPLEMENTATION:
       // 1. Generate Salt.
       // 2. Derive Key.
       // 3. Encrypt string "VERIFY" with Key.
       // 4. Store Salt and EncryptedString.
-      
+
       final verificationEnc = await _cryptoService.encryptData(
-        data: utf8.encode('VERIFY'), 
-        key: key
+        data: utf8.encode('VERIFY'),
+        key: key,
       );
-      
-      return verificationEnc.fold(
-        (l) => left(l),
-        (encryptedBytes) async {
-          final folder = FolderModel(
-            id: const Uuid().v4(),
-            name: name,
-            salt: base64Encode(salt),
-            verificationHash: base64Encode(encryptedBytes),
-            createdAt: DateTime.now(),
-          );
-          return await _folderRepository.saveFolder(folder);
-        },
-      );
+
+      return verificationEnc.fold((l) => left(l), (encryptedBytes) async {
+        final folder = FolderModel(
+          id: const Uuid().v4(),
+          name: name,
+          salt: base64Encode(salt),
+          verificationHash: base64Encode(encryptedBytes),
+          createdAt: DateTime.now(),
+        );
+        return await _folderRepository.saveFolder(folder);
+      });
     } catch (e) {
       return left(Failure.unexpected(e.toString()));
     }
   }
 
-  Future<Either<Failure, SecretKey>> verifyPasswordAndGetKey(FolderModel folder, String password) async {
+  Future<Either<Failure, SecretKey>> verifyPasswordAndGetKey(
+    FolderModel folder,
+    String password,
+  ) async {
     try {
       final salt = base64Decode(folder.salt);
       final key = await _cryptoService.deriveKeyFromPassword(password, salt);
-      
+
       final encryptedVerify = base64Decode(folder.verificationHash);
-      final decrypted = await _cryptoService.decryptData(encryptedData: encryptedVerify, key: key);
-      
-      return decrypted.fold(
-        (l) => left(const Failure.invalidPassword()),
-        (data) {
-          final str = utf8.decode(data);
-          if (str == 'VERIFY') {
-            return right(key);
-          } else {
-            return left(const Failure.invalidPassword());
-          }
-        },
+      final decrypted = await _cryptoService.decryptData(
+        encryptedData: encryptedVerify,
+        key: key,
       );
+
+      return decrypted.fold((l) => left(const Failure.invalidPassword()), (
+        data,
+      ) {
+        final str = utf8.decode(data);
+        if (str == 'VERIFY') {
+          return right(key);
+        } else {
+          return left(const Failure.invalidPassword());
+        }
+      });
     } catch (e) {
       return left(const Failure.invalidPassword());
     }
@@ -138,21 +145,21 @@ class VaultService {
     // Maybe Stream<EncryptionStatus>.
     // For now, assume this yields progress 0.0 to 1.0.
     // If error, throws.
-    
+
     // 1. Generate File Key (DEK)
     final fileKey = await _cryptoService.generateRandomKey();
     final fileKeyBytes = await fileKey.extractBytes();
-    
+
     // 2. Encrypt the File Content (IN ISOLATE)
     final vaultPathResult = await _storageService.createEncryptedFileDir();
     if (vaultPathResult.isLeft()) throw Exception("Storage Error");
     final vaultPath = vaultPathResult.getOrElse(() => '');
-    
+
     final fileId = const Uuid().v4();
     final destPath = '$vaultPath/$fileId.enc';
-    
+
     final receivePort = ReceivePort();
-    
+
     await Isolate.spawn(
       _isolateEncryptionEntry,
       _IsolateEncryptionArgs(
@@ -162,7 +169,7 @@ class VaultService {
         keyBytes: fileKeyBytes,
       ),
     );
-    
+
     // Listen to progress
     // We need to wait for completion.
     await for (final message in receivePort) {
@@ -174,45 +181,47 @@ class VaultService {
         throw Exception(message);
       }
     }
-    
+
     // 3. Create Metadata
     // We need to encrypt the Metadata using the Folder Key.
     // Metadata includes the DEK (`fileKeyBytes`).
     // So we are wrapping the DEK with KEK.
-    
-    // Encrypt the File Key itself? 
+
+    // Encrypt the File Key itself?
     // Metadata contains `fileKey` string.
-    
+
     final metadata = FileMetadata(
       id: fileId,
       fileName: originalFile.path.split(Platform.pathSeparator).last,
       size: await originalFile.length(),
       mimeType: _getMimeType(originalFile.path),
       encryptedFilePath: destPath,
-      fileKey: base64Encode(fileKeyBytes), 
-      nonce: "", // If using stream cipher with internal nonce, or AesGcm with random nonce. 
-                 // My isolate logic needs to return the Nonce used! 
-                 // Updated Isolate args to return nonce.
+      fileKey: base64Encode(fileKeyBytes),
+      nonce:
+          "", // If using stream cipher with internal nonce, or AesGcm with random nonce.
+      // My isolate logic needs to return the Nonce used!
+      // Updated Isolate args to return nonce.
       allowSaveToDownloads: true,
       expiryDate: null,
     );
-    
+
     final metadataJson = jsonEncode(metadata.toJson());
     // Encrypt Metadata with Folder Key
     final encryptedMetadataRes = await _cryptoService.encryptData(
-      data: utf8.encode(metadataJson), 
-      key: folderKey
+      data: utf8.encode(metadataJson),
+      key: folderKey,
     );
-    
-    if (encryptedMetadataRes.isLeft()) throw Exception("Metadata Encryption Failed");
+
+    if (encryptedMetadataRes.isLeft())
+      throw Exception("Metadata Encryption Failed");
     final encryptedMetadata = encryptedMetadataRes.getOrElse(() => []);
-    
+
     // 4. Generate Thumbnail (if applicable) -- Placeholder
     // requirement: "Thumbnails must be generated efficiently"
     // We can use `video_thumbnail` on `originalFile` (plaintext) BEFORE it is deleted (if user deletes it).
     // Then encrypt the thumbnail.
     // For now, leaving empty string.
-    
+
     // 5. Save FileModel
     final fileModel = FileModel(
       id: fileId,
@@ -221,7 +230,7 @@ class VaultService {
       encryptedPreviewPath: "", // Implement later
       expiryDate: null,
     );
-    
+
     await _fileRepository.saveFileModel(fileModel);
     yield 1.0;
   }
@@ -234,25 +243,26 @@ class VaultService {
     final encMetadataBytes = base64Decode(file.encryptedMetadata);
     // decryptData returns Either. We strictly need the result.
     final metadataResult = await _cryptoService.decryptData(
-      encryptedData: encMetadataBytes, 
-      key: folderKey
+      encryptedData: encMetadataBytes,
+      key: folderKey,
     );
-    
+
     if (metadataResult.isLeft()) throw Exception("Failed to decrypt metadata");
     final metadataJson = utf8.decode(metadataResult.getOrElse(() => []));
     final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
-    
+
     // Check Expiry
-    if (metadata.expiryDate != null && DateTime.now().isAfter(metadata.expiryDate!)) {
-       // Delete file immediately
-       await _fileRepository.deleteFile(file.id);
-       throw Exception("File has expired and has been deleted.");
+    if (metadata.expiryDate != null &&
+        DateTime.now().isAfter(metadata.expiryDate!)) {
+      // Delete file immediately
+      await _fileRepository.deleteFile(file.id);
+      throw Exception("File has expired and has been deleted.");
     }
-    
+
     // 2. Get File Key (DEK)
     final dekBytes = base64Decode(metadata.fileKey);
     final dek = SecretKey(dekBytes);
-    
+
     // 3. Stream Decrypt
     // We need to read the encrypted file and decrypt chunks.
     // CAUTION: We used a simplified GCM in Isolate which outputted [Block1][Block2]...
@@ -261,60 +271,54 @@ class VaultService {
     // We must respect the block boundaries.
     // Our Isolate combined (Nonce + Ciphertext + Tag) for each chunk.
     // Size = 12 + 1024*1024 + 16.
-    
+
     final blockSize = 12 + (1024 * 1024) + 16;
     final fileObj = File(metadata.encryptedFilePath);
-    
+
     if (!await fileObj.exists()) throw Exception("File not found on disk");
-    
+
     final stream = fileObj.openRead();
-    
+
     // We need to buffer until we have a full block.
     List<int> buffer = [];
     final algorithm = AesGcm.with256bits();
 
     await for (final chunk in stream) {
       buffer.addAll(chunk);
-      
+
       while (buffer.length >= blockSize) {
         final block = buffer.sublist(0, blockSize);
         buffer = buffer.sublist(blockSize);
-        
+
         final nonce = block.sublist(0, 12);
         final ciphertextWithTag = block.sublist(12);
-        
-        // GCM: ciphertext includes tag at end? 
+
+        // GCM: ciphertext includes tag at end?
         // `secretBox.concatenation()` puts nonce then ciphertext then tag.
         // Wait, `SecretBox.fromConcatenation` handles this if we know lengths.
         // `AesGcm` default nonce=12, tag=16.
-        
+
         final secretBox = SecretBox.fromConcatenation(
           block,
           nonceLength: 12,
           macLength: 16,
         );
-        
-        final clearText = await algorithm.decrypt(
-          secretBox,
-          secretKey: dek,
-        );
-        
+
+        final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
+
         yield clearText;
       }
     }
-    
+
     // Last block might be smaller.
     if (buffer.isNotEmpty) {
-       final secretBox = SecretBox.fromConcatenation(
-          buffer,
-          nonceLength: 12,
-          macLength: 16,
-        );
-        final clearText = await algorithm.decrypt(
-          secretBox,
-          secretKey: dek,
-        );
-        yield clearText;
+      final secretBox = SecretBox.fromConcatenation(
+        buffer,
+        nonceLength: 12,
+        macLength: 16,
+      );
+      final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
+      yield clearText;
     }
   }
 
@@ -327,71 +331,74 @@ class VaultService {
     // 1. Decrypt Metadata
     final encMetadataBytes = base64Decode(file.encryptedMetadata);
     final metadataResult = await _cryptoService.decryptData(
-      encryptedData: encMetadataBytes, 
-      key: folderKey
+      encryptedData: encMetadataBytes,
+      key: folderKey,
     );
-    
+
     if (metadataResult.isLeft()) throw Exception("Failed to decrypt metadata");
     final metadataJson = utf8.decode(metadataResult.getOrElse(() => []));
     final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
-    
+
     // Check Expiry
-    if (metadata.expiryDate != null && DateTime.now().isAfter(metadata.expiryDate!)) {
-       await _fileRepository.deleteFile(file.id);
-       throw Exception("File has expired.");
+    if (metadata.expiryDate != null &&
+        DateTime.now().isAfter(metadata.expiryDate!)) {
+      await _fileRepository.deleteFile(file.id);
+      throw Exception("File has expired.");
     }
-    
+
     // 2. Setup
     final dekBytes = base64Decode(metadata.fileKey);
     final dek = SecretKey(dekBytes);
     final fileObj = File(metadata.encryptedFilePath);
     if (!await fileObj.exists()) throw Exception("File not found");
-    
+
     final fileSize = metadata.size;
     final effectiveEnd = end ?? (fileSize - 1);
-    
+
     if (start > effectiveEnd) return;
-    
+
     // 3. Calculate Chunks
     const chunkSize = 1024 * 1024;
     const overhead = 12 + 16;
     const blockSize = chunkSize + overhead;
-    
+
     final startChunkIndex = start ~/ chunkSize;
     final endChunkIndex = effectiveEnd ~/ chunkSize;
-    
+
     final algorithm = AesGcm.with256bits();
-    
+
     final openFile = await fileObj.open();
-    
+
     try {
       for (var i = startChunkIndex; i <= endChunkIndex; i++) {
         final blockOffset = i * blockSize;
         await openFile.setPosition(blockOffset);
-        
+
         final block = await openFile.read(blockSize);
         if (block.isEmpty) break;
-        
+
         if (block.length < overhead) throw Exception("Corrupt block");
-        
+
         final secretBox = SecretBox.fromConcatenation(
           block,
           nonceLength: 12,
           macLength: 16,
         );
-        
-        final clearText = await algorithm.decrypt(
-          secretBox,
-          secretKey: dek,
-        );
-        
+
+        final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
+
         final chunkStartOffset = i * chunkSize;
         // final chunkEndOffset = chunkStartOffset + clearText.length - 1;
-        
+
         // Calculate intersection
-        final intersectStart = start > chunkStartOffset ? start : chunkStartOffset;
-        final intersectEnd = effectiveEnd < (chunkStartOffset + clearText.length - 1) ? effectiveEnd : (chunkStartOffset + clearText.length - 1);
-        
+        final intersectStart = start > chunkStartOffset
+            ? start
+            : chunkStartOffset;
+        final intersectEnd =
+            effectiveEnd < (chunkStartOffset + clearText.length - 1)
+            ? effectiveEnd
+            : (chunkStartOffset + clearText.length - 1);
+
         if (intersectStart <= intersectEnd) {
           final relativeStart = intersectStart - chunkStartOffset;
           final relativeEnd = intersectEnd - chunkStartOffset;
@@ -405,13 +412,13 @@ class VaultService {
 
   Stream<ExportStatus> exportFolder({
     required FolderModel folder,
-    required SecretKey key, 
+    required SecretKey key,
     required DateTime? expiry,
     required bool allowSave,
   }) async* {
     try {
       final salt = base64Decode(folder.salt);
-      
+
       // 1. Get all files
       final filesRes = await _fileRepository.getFiles(folder.id);
       if (filesRes.isLeft()) {
@@ -426,36 +433,42 @@ class VaultService {
       // We need to decrypt metadata here to check validity and prepare export items
       final exportItems = <_IsolateExportItem>[];
       final keyBytes = await key.extractBytes();
-      
+
       for (var i = 0; i < files.length; i++) {
         final file = files[i];
         final encMeta = base64Decode(file.encryptedMetadata);
-        final metaRes = await _cryptoService.decryptData(encryptedData: encMeta, key: key);
-        
+        final metaRes = await _cryptoService.decryptData(
+          encryptedData: encMeta,
+          key: key,
+        );
+
         if (metaRes.isRight()) {
           final metaJson = utf8.decode(metaRes.getOrElse(() => []));
           final originalMeta = FileMetadata.fromJson(jsonDecode(metaJson));
-          
+
           // Check for expiry BEFORE exporting
-          if (originalMeta.expiryDate != null && DateTime.now().isAfter(originalMeta.expiryDate!)) {
-             // File is expired. Delete it and skip.
-             await _fileRepository.deleteFile(file.id);
-             continue;
+          if (originalMeta.expiryDate != null &&
+              DateTime.now().isAfter(originalMeta.expiryDate!)) {
+            // File is expired. Delete it and skip.
+            await _fileRepository.deleteFile(file.id);
+            continue;
           }
 
-          exportItems.add(_IsolateExportItem(
-            id: file.id,
-            originalEncryptedPath: originalMeta.encryptedFilePath,
-            originalMetadataJson: metaJson,
-          ));
+          exportItems.add(
+            _IsolateExportItem(
+              id: file.id,
+              originalEncryptedPath: originalMeta.encryptedFilePath,
+              originalMetadataJson: metaJson,
+            ),
+          );
         }
       }
 
       final tempDir = await getTemporaryDirectory();
-      
+
       // 3. Spawn Isolate
       final receivePort = ReceivePort();
-      
+
       await Isolate.spawn(
         _isolateExportEntry,
         _IsolateExportArgs(
@@ -471,77 +484,88 @@ class VaultService {
           allowSave: allowSave,
         ),
       );
-      
+
       // 4. Listen to Isolate
       await for (final message in receivePort) {
         if (message is ExportStatus) {
-           yield message;
-           if (message is ExportSuccess || message is ExportFailure) {
-             break;
-           }
+          yield message;
+          if (message is ExportSuccess || message is ExportFailure) {
+            break;
+          }
         }
       }
-      
     } catch (e) {
       yield ExportFailure(e.toString());
     }
   }
 
-  Future<Either<Failure, Unit>> importBlindKey(String path, String password) async {
+  Future<Either<Failure, Unit>> importBlindKey(
+    String path,
+    String password,
+  ) async {
     try {
       final file = File(path);
-      if (!await file.exists()) return left(const Failure.fileSystemError("File not found"));
-      
+      if (!await file.exists())
+        return left(const Failure.fileSystemError("File not found"));
+
       final bytes = await file.readAsBytes();
-      if (bytes.length < 16) return left(const Failure.unexpected("Invalid file"));
-      
+      if (bytes.length < 16)
+        return left(const Failure.unexpected("Invalid file"));
+
       // Extract Salt (first 16 bytes? My generic salt size. Argon2 defaults dynamic but I passed list?
       // In `createFolder`: `generateRandomKey().then((k) => k.extractBytes())` -> 32 bytes (AesGcm 256 key is 32 bytes).
       // So Salt is 32 bytes.
-      
+
       final salt = bytes.sublist(0, 32);
       final zipData = bytes.sublist(32);
-      
+
       // Derive Key
       final key = await _cryptoService.deriveKeyFromPassword(password, salt);
-      
+
       // Unzip
       final archive = ZipDecoder().decodeBytes(zipData);
-      
+
       // Find manifest
       final manifestFile = archive.findFile('manifest.enc');
-      if (manifestFile == null) return left(const Failure.unexpected("Invalid blindkey file"));
-      
+      if (manifestFile == null)
+        return left(const Failure.unexpected("Invalid blindkey file"));
+
       final encManifest = manifestFile.content as List<int>;
-      final decManifestRes = await _cryptoService.decryptData(encryptedData: encManifest, key: key);
-      
+      final decManifestRes = await _cryptoService.decryptData(
+        encryptedData: encManifest,
+        key: key,
+      );
+
       return decManifestRes.fold(
-        (l) => left(const Failure.invalidPassword()), // Decryption failed = Wrong password
+        (l) => left(
+          const Failure.invalidPassword(),
+        ), // Decryption failed = Wrong password
         (clearBytes) async {
           final json = utf8.decode(clearBytes);
           final map = jsonDecode(json);
-          
+
           // Check Global Expiry from Manifest
           if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
             final expiryIso = map['expiryDate'] as String;
             final expiryDate = DateTime.tryParse(expiryIso);
-            if (expiryDate != null && DateTime.now().toUtc().isAfter(expiryDate.toUtc())) {
-               // Vault is expired
-               return left(const Failure.fileExpired());
+            if (expiryDate != null &&
+                DateTime.now().toUtc().isAfter(expiryDate.toUtc())) {
+              // Vault is expired
+              return left(const Failure.fileExpired());
             }
           }
-          
+
           // Import Folder
           // Check if folder exists? Import as new?
           // Let's import as new (rename if collision?).
           // Using UUID so ID collision rare.
-          
+
           final folderId = map['id']; // Or generate new?
           // If we use same ID, we merge?
           // Requirement: "Import... imports into vault".
           // Let's generate NEW Folder ID to avoid conflicts, but keep name.
           // Reuse Salt/Verification? Yes, because we rely on the password.
-          
+
           final newFolderId = const Uuid().v4();
           final folder = FolderModel(
             id: newFolderId,
@@ -550,58 +574,63 @@ class VaultService {
             verificationHash: map['verificationHash'],
             createdAt: DateTime.now(),
           );
-          
+
           await _folderRepository.saveFolder(folder);
-          
+
           // Import Files
-          final filesList = (map['files'] as List).map((e) => FileMetadata.fromJson(e)).toList();
+          final filesList = (map['files'] as List)
+              .map((e) => FileMetadata.fromJson(e))
+              .toList();
           final vaultPathRes = await _storageService.createEncryptedFileDir();
           final vaultPath = vaultPathRes.getOrElse(() => '');
-          
+
           for (final meta in filesList) {
-             // Check Expiry (File Level)
-              if (meta.expiryDate != null && DateTime.now().toUtc().isAfter(meta.expiryDate!.toUtc())) {
-               continue; // process next
-             }
-             
-             final zipFile = archive.findFile(meta.encryptedFilePath); // 'files/{id}.enc'
-             if (zipFile != null) {
-               final fileBytes = zipFile.content as List<int>;
-               final newFileId = const Uuid().v4();
-               final newPath = '$vaultPath/$newFileId.enc';
-               
-               await File(newPath).writeAsBytes(fileBytes);
-               
-               // Update Metadata with new path/id
-               final newMeta = meta.copyWith(
-                 id: newFileId,
-                 encryptedFilePath: newPath,
-               );
-               
-               // Re-encrypt Metadata with Key
-               final metaJson = jsonEncode(newMeta.toJson());
-               final encMetaRes = await _cryptoService.encryptData(data: utf8.encode(metaJson), key: key);
-               final encMeta = encMetaRes.getOrElse(() => []);
-               
-               final fileModel = FileModel(
-                 id: newFileId,
-                 folderId: newFolderId,
-                 encryptedMetadata: base64Encode(encMeta),
-                 encryptedPreviewPath: "",
-                 expiryDate: meta.expiryDate,
-               );
-               
-               await _fileRepository.saveFileModel(fileModel);
-             }
+            // Import all files, including expired ones
+            // Expired files will be shown with an indicator and deleted when accessed
+
+            final zipFile = archive.findFile(
+              meta.encryptedFilePath,
+            ); // 'files/{id}.enc'
+            if (zipFile != null) {
+              final fileBytes = zipFile.content as List<int>;
+              final newFileId = const Uuid().v4();
+              final newPath = '$vaultPath/$newFileId.enc';
+
+              await File(newPath).writeAsBytes(fileBytes);
+
+              // Update Metadata with new path/id
+              final newMeta = meta.copyWith(
+                id: newFileId,
+                encryptedFilePath: newPath,
+              );
+
+              // Re-encrypt Metadata with Key
+              final metaJson = jsonEncode(newMeta.toJson());
+              final encMetaRes = await _cryptoService.encryptData(
+                data: utf8.encode(metaJson),
+                key: key,
+              );
+              final encMeta = encMetaRes.getOrElse(() => []);
+
+              final fileModel = FileModel(
+                id: newFileId,
+                folderId: newFolderId,
+                encryptedMetadata: base64Encode(encMeta),
+                encryptedPreviewPath: "",
+                expiryDate: meta.expiryDate,
+              );
+
+              await _fileRepository.saveFileModel(fileModel);
+            }
           }
           return right(unit);
-        }
+        },
       );
-      
     } catch (e) {
       return left(Failure.unexpected(e.toString()));
     }
   }
+
   Future<Either<Failure, FileMetadata>> decryptMetadata({
     required FileModel file,
     required SecretKey folderKey,
@@ -609,26 +638,24 @@ class VaultService {
     try {
       final encMetadataBytes = base64Decode(file.encryptedMetadata);
       final metadataResult = await _cryptoService.decryptData(
-        encryptedData: encMetadataBytes, 
-        key: folderKey
+        encryptedData: encMetadataBytes,
+        key: folderKey,
       );
-      
-      return metadataResult.fold(
-        (l) => left(l),
-        (bytes) {
-          try {
-             final metadataJson = utf8.decode(bytes);
-             final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
-             return right(metadata);
-          } catch (e) {
-             return left(Failure.unexpected("Metadata JSON error: $e"));
-          }
+
+      return metadataResult.fold((l) => left(l), (bytes) {
+        try {
+          final metadataJson = utf8.decode(bytes);
+          final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
+          return right(metadata);
+        } catch (e) {
+          return left(Failure.unexpected("Metadata JSON error: $e"));
         }
-      );
+      });
     } catch (e) {
       return left(Failure.unexpected("Metadata access error: $e"));
     }
   }
+
   String _getMimeType(String path) {
     final ext = path.split('.').last.toLowerCase();
     switch (ext) {
@@ -660,7 +687,7 @@ class VaultService {
       case 'dart':
       case 'md':
       case 'csv':
-        return 'text/plain'; 
+        return 'text/plain';
       case 'html': // Special handling maybe?
         return 'text/html';
       case 'svg':
@@ -714,20 +741,20 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
     final outFile = File(args.outputPath);
     final inStream = inFile.openRead();
     final outSink = outFile.openWrite();
-    
+
     final totalSize = await inFile.length();
     int processed = 0;
-    
-    // Use AES-GCM for chunks? 
+
+    // Use AES-GCM for chunks?
     // Or AES-CTR (Counter mode).
     // CTR is best for streaming without expansion issues (ciphertext size = plaintext size).
     // GCM adds tags.
     // Let's use `cryptography` package inside isolate.
     // Note: We need to import `cryptography` here which is fine.
-    
+
     final algorithm = AesGcm.with256bits();
     final secretKey = SecretKey(args.keyBytes);
-    
+
     // For GCM streaming: We can't easily stream one GCM block for huge files.
     // We should chunk it. e.g. 1MB blocks.
     // Output format: [Nonce (12)][Block1 (Size+Tag)][Block2]...
@@ -735,19 +762,19 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
     // Simpler: Use a unique Nonce for each block: Nonce + BlockIndex.
     // But GCM tag is 16 bytes.
     // So 1MB plaintext -> 1MB + 16 bytes ciphertext.
-    
+
     final chunkSize = 1024 * 1024; // 1MB
     int chunkIndex = 0;
-    
+
     // Listen to stream and buffer chunks
     List<int> buffer = [];
-    
+
     await for (final chunk in inStream) {
       buffer.addAll(chunk);
       while (buffer.length >= chunkSize) {
         final toProcess = buffer.sublist(0, chunkSize);
         buffer = buffer.sublist(chunkSize);
-        
+
         // Encrypt chunk
         // Construct nonce: 12 bytes. Last 4 bytes = chunkIndex.
         // Or random nonce for first, increment for next?
@@ -755,7 +782,7 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
         // DANGER: Reusing nonce with same key is FATAL.
         // Since `fileKey` is random per file, we can use Counter for nonce.
         // Nonce = 0, 1, 2...
-        
+
         final nonce = List<int>.filled(12, 0);
         // encode chunkIndex into nonce (Big Endian)
         var tempIndex = chunkIndex;
@@ -763,22 +790,22 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
           nonce[i] = tempIndex & 0xFF;
           tempIndex >>= 8;
         }
-        
+
         final secretBox = await algorithm.encrypt(
           toProcess,
           secretKey: secretKey,
           nonce: nonce,
         );
-        
+
         outSink.add(secretBox.concatenation());
-        
+
         processed += toProcess.length;
         args.checkSendPort.send(processed / totalSize);
-        
+
         chunkIndex++;
       }
     }
-    
+
     // Final chunk
     if (buffer.isNotEmpty) {
       final nonce = List<int>.filled(12, 0);
@@ -787,7 +814,7 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
         nonce[i] = tempIndex & 0xFF;
         tempIndex >>= 8;
       }
-      
+
       final secretBox = await algorithm.encrypt(
         buffer,
         secretKey: secretKey,
@@ -797,10 +824,10 @@ Future<void> _isolateEncryptionEntry(_IsolateEncryptionArgs args) async {
       processed += buffer.length;
       args.checkSendPort.send(1.0);
     }
-    
+
     await outSink.flush();
     await outSink.close();
-    
+
     args.checkSendPort.send("DONE");
   } catch (e) {
     args.checkSendPort.send("ERROR: $e");
@@ -811,7 +838,7 @@ class _IsolateExportItem {
   final String id;
   final String originalEncryptedPath;
   final String originalMetadataJson;
-  
+
   _IsolateExportItem({
     required this.id,
     required this.originalEncryptedPath,
@@ -849,105 +876,109 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
   Directory? stagingDir;
   try {
     args.sendPort.send(ExportProgress(0.1, "Initializing export..."));
-    
+
     // Create staging area
-    stagingDir = Directory('${args.tempDirPath}/export_staging_${const Uuid().v4()}');
+    stagingDir = Directory(
+      '${args.tempDirPath}/export_staging_${const Uuid().v4()}',
+    );
     await stagingDir.create();
-    
+
     final zipPath = '${stagingDir.path}/archive.zip';
     final encoder = ZipFileEncoder();
     encoder.create(zipPath);
-    
+
     final exportMetadataList = <FileMetadata>[];
-    
+
     // Process Files
     final totalFiles = args.exportItems.length;
-    
+
     for (var i = 0; i < totalFiles; i++) {
-        final item = args.exportItems[i];
-        
-        // Report Progress
-        // Range 0.1 to 0.8
-        final progress = 0.1 + ((i / totalFiles) * 0.7);
-        args.sendPort.send(ExportProgress(progress, "Processing file ${i + 1}/$totalFiles..."));
-        
-        final originalMeta = FileMetadata.fromJson(jsonDecode(item.originalMetadataJson));
-        
-        // Create Export Metadata
-        final exportMeta = originalMeta.copyWith(
-           expiryDate: args.expiry,
-           allowSaveToDownloads: args.allowSave,
-           encryptedFilePath: 'files/${item.id}.enc',
-        );
-        exportMetadataList.add(exportMeta);
-        
-        // Add physical file to ZIP
-        final fileObj = File(item.originalEncryptedPath);
-        if (await fileObj.exists()) {
-           // We are moving ENCRYPTED file 'as-is' into the zip.
-           // This is efficient (no re-encryption).
-           await encoder.addFile(fileObj, 'files/${item.id}.enc');
-        }
+      final item = args.exportItems[i];
+
+      // Report Progress
+      // Range 0.1 to 0.8
+      final progress = 0.1 + ((i / totalFiles) * 0.7);
+      args.sendPort.send(
+        ExportProgress(progress, "Processing file ${i + 1}/$totalFiles..."),
+      );
+
+      final originalMeta = FileMetadata.fromJson(
+        jsonDecode(item.originalMetadataJson),
+      );
+
+      // Create Export Metadata
+      final exportMeta = originalMeta.copyWith(
+        expiryDate: args.expiry,
+        allowSaveToDownloads: args.allowSave,
+        encryptedFilePath: 'files/${item.id}.enc',
+      );
+      exportMetadataList.add(exportMeta);
+
+      // Add physical file to ZIP
+      final fileObj = File(item.originalEncryptedPath);
+      if (await fileObj.exists()) {
+        // We are moving ENCRYPTED file 'as-is' into the zip.
+        // This is efficient (no re-encryption).
+        await encoder.addFile(fileObj, 'files/${item.id}.enc');
+      }
     }
-    
+
     args.sendPort.send(ExportProgress(0.85, "Finalizing package..."));
-    
+
     // Create Manifest
     final manifest = {
       'id': args.folderId,
       'name': args.folderName,
-      'verificationHash': args.folderVerificationHash, 
+      'verificationHash': args.folderVerificationHash,
       'files': exportMetadataList.map((e) => e.toJson()).toList(),
       'expiryDate': args.expiry?.toIso8601String(),
     };
-    
+
     final manifestJson = jsonEncode(manifest);
-    
+
     // Encrypt Manifest manually using AesGcm
     final algorithm = AesGcm.with256bits();
     final secretKey = SecretKey(args.folderKeyBytes);
     final nonce = await algorithm.newNonce(); // Random nonce
-    
+
     final secretBox = await algorithm.encrypt(
       utf8.encode(manifestJson),
       secretKey: secretKey,
       nonce: nonce,
     );
-    
+
     final encManifest = secretBox.concatenation();
-    
+
     // Write manifest to temp file then add to zip
     final manifestFile = File('${stagingDir.path}/manifest.enc');
     await manifestFile.writeAsBytes(encManifest);
     await encoder.addFile(manifestFile, 'manifest.enc');
-    
+
     encoder.close();
-    
+
     args.sendPort.send(ExportProgress(0.9, "Writing .blindkey file..."));
-    
+
     // Create Final .blindkey file [Salt][ZipFileContent]
     final finalPath = '${args.tempDirPath}/${args.folderName}.blindkey';
     final finalFile = File(finalPath);
     final sink = finalFile.openWrite();
-    
+
     // Write Salt
     sink.add(args.folderSalt);
-    
+
     // Stream Zip Content
     final zipFile = File(zipPath);
     await sink.addStream(zipFile.openRead());
-    
+
     await sink.flush();
     await sink.close();
-    
+
     args.sendPort.send(ExportSuccess(finalPath));
-    
   } catch (e) {
     args.sendPort.send(ExportFailure(e.toString()));
   } finally {
-     if (stagingDir != null && await stagingDir.exists()) {
-       await stagingDir.delete(recursive: true);
-     }
+    if (stagingDir != null && await stagingDir.exists()) {
+      await stagingDir.delete(recursive: true);
+    }
   }
 }
-

@@ -287,7 +287,6 @@ class HomePage extends HookConsumerWidget {
                 height: 1.5,
               ),
             ),
-           
           ],
         ),
       ),
@@ -767,13 +766,19 @@ class HomePage extends HookConsumerWidget {
                                   } catch (e) {
                                     if (context.mounted) {
                                       isLoading.value = false;
-                                      
-                                      String msg = 'Import failed: Incorrect password or corrupted file';
-                                      if (e is Failure && e == const Failure.fileExpired()) {
+
+                                      String msg =
+                                          'Import failed: Incorrect password or corrupted file';
+                                      if (e is Failure &&
+                                          e == const Failure.fileExpired()) {
                                         msg = 'This vault file has expired';
                                       }
-                                      
+
                                       errorText.value = msg;
+
+                                      // Ensure provider state is refreshed to clear any error state
+                                      // This prevents "unable to load vaults" error from persisting
+                                      ref.invalidate(folderNotifierProvider);
                                     }
                                   }
                                 },
@@ -817,7 +822,11 @@ class HomePage extends HookConsumerWidget {
                       ] else ...[
                         const SizedBox(height: 16),
                         TextButton(
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            // Refresh provider state when canceling to ensure no error state persists
+                            ref.invalidate(folderNotifierProvider);
+                            Navigator.pop(context);
+                          },
                           child: Text(
                             "Cancel",
                             style: GoogleFonts.inter(color: Colors.white54),
