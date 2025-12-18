@@ -436,6 +436,13 @@ class VaultService {
           final metaJson = utf8.decode(metaRes.getOrElse(() => []));
           final originalMeta = FileMetadata.fromJson(jsonDecode(metaJson));
           
+          // Check for expiry BEFORE exporting
+          if (originalMeta.expiryDate != null && DateTime.now().isAfter(originalMeta.expiryDate!)) {
+             // File is expired. Delete it and skip.
+             await _fileRepository.deleteFile(file.id);
+             continue;
+          }
+
           exportItems.add(_IsolateExportItem(
             id: file.id,
             originalEncryptedPath: originalMeta.encryptedFilePath,

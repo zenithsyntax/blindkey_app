@@ -32,9 +32,9 @@ class FileNotifier extends _$FileNotifier {
     
     return result.fold(
       (failure) => throw failure,
-      (files) {
+      (files) async {
         if (files.length < _limit) _hasMore = false;
-        return files;
+        return await _processExpiredFiles(files);
       },
     );
   }
@@ -55,19 +55,20 @@ class FileNotifier extends _$FileNotifier {
       
       final result = await repo.getFiles(folderId, limit: _limit, offset: offset);
       
-      result.fold(
-        (l) {
+      await result.fold(
+        (l) async {
            _isLoadingMore = false;
-           // In a real app we might want to show an error or rollback the page count
            _page--; 
         },
-        (newFiles) {
+        (newFiles) async {
           if (newFiles.length < _limit) _hasMore = false;
           
           if (newFiles.isNotEmpty) {
+             // Filter expired
+             final validFiles = await _processExpiredFiles(newFiles);
+             
              final currentList = state.value ?? [];
-             // Update state with new list effectively
-             state = AsyncValue.data([...currentList, ...newFiles]);
+             state = AsyncValue.data([...currentList, ...validFiles]);
           }
           _isLoadingMore = false;
         }
@@ -76,6 +77,22 @@ class FileNotifier extends _$FileNotifier {
       _isLoadingMore = false;
       _page--;
     }
+  }
+
+  Future<List<FileModel>> _processExpiredFiles(List<FileModel> files) async {
+    final repo = ref.read(fileRepositoryProvider);
+    final validFiles = <FileModel>[];
+    
+    for (final file in files) {
+      if (file.expiryDate != null && DateTime.now().toUtc().isAfter(file.expiryDate!.toUtc())) {
+        // Expired - Delete
+        await repo.deleteFile(file.id);
+        // Do not add to validFiles
+      } else {
+        validFiles.add(file);
+      }
+    }
+    return validFiles;
   }
 
   Future<void> uploadFiles(List<File> files, FolderModel folder, SecretKey folderKey) async {

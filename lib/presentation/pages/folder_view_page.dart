@@ -77,8 +77,8 @@ class FolderViewPage extends HookConsumerWidget {
                        await showDialog(
                          context: context,
                          builder: (context) => _ShareDialog(
-                           onExport: (expiry, allowSave) {
-                             showDialog(
+                           onExport: (expiry, allowSave) async {
+                             await showDialog(
                                context: context,
                                barrierDismissible: false,
                                builder: (context) => _ExportProgressDialog(
@@ -88,6 +88,8 @@ class FolderViewPage extends HookConsumerWidget {
                                  allowSave: allowSave,
                                ),
                              );
+                             // Refresh files in case any were expired/deleted by export process
+                             ref.invalidate(fileNotifierProvider(folder.id));
                            },
                          ),
                        );
