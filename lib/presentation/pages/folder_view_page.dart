@@ -413,6 +413,7 @@ class _ShareDialog extends HookWidget {
   Widget build(BuildContext context) {
     final expiry = useState<DateTime?>(null);
     final allowSave = useState(true);
+    final errorText = useState<String?>(null);
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -462,93 +463,122 @@ class _ShareDialog extends HookWidget {
               ),
               const SizedBox(height: 12),
               // Expiry Date
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ListTile(
-                  title: Text(
-                    expiry.value == null
-                        ? "No Expiry Date"
-                        : "Expires: ${expiry.value!.year}-${expiry.value!.month.toString().padLeft(2, '0')}-${expiry.value!.day.toString().padLeft(2, '0')} ${expiry.value!.hour.toString().padLeft(2, '0')}:${expiry.value!.minute.toString().padLeft(2, '0')}",
-                    style: GoogleFonts.inter(color: Colors.white70),
-                  ),
-                  trailing: const Icon(
-                    Icons.calendar_today_rounded,
-                    color: Colors.white30,
-                    size: 20,
-                  ),
-                  onTap: () async {
-                    final pickedDate = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now().add(const Duration(days: 1)),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                      builder: (context, child) {
-                        return Theme(
-                          data: ThemeData.dark().copyWith(
-                            colorScheme: const ColorScheme.dark(
-                              primary: Color(0xFFEF5350),
-                              onPrimary: Colors.white,
-                              surface: Color(0xFF1A1A1A),
-                              onSurface: Colors.white,
-                            ),
-                            dialogBackgroundColor: const Color(0xFF1A1A1A),
-                          ),
-                          child: child!,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: errorText.value != null
+                          ? Border.all(color: Colors.redAccent.withOpacity(0.5))
+                          : null,
+                    ),
+                    child: ListTile(
+                      title: Text(
+                        expiry.value == null
+                            ? "No Expiry Date"
+                            : "Expires: ${expiry.value!.year}-${expiry.value!.month.toString().padLeft(2, '0')}-${expiry.value!.day.toString().padLeft(2, '0')} ${expiry.value!.hour.toString().padLeft(2, '0')}:${expiry.value!.minute.toString().padLeft(2, '0')}",
+                        style: GoogleFonts.inter(color: Colors.white70),
+                      ),
+                      trailing: const Icon(
+                        Icons.calendar_today_rounded,
+                        color: Colors.white30,
+                        size: 20,
+                      ),
+                      onTap: () async {
+                        errorText.value = null; // Clear previous error
+                        final now = DateTime.now();
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: now.add(const Duration(minutes: 10)),
+                          firstDate: now,
+                          lastDate: now.add(const Duration(days: 365)),
+                          builder: (context, child) {
+                            return Theme(
+                              data: ThemeData.dark().copyWith(
+                                colorScheme: const ColorScheme.dark(
+                                  primary: Color(0xFFEF5350),
+                                  onPrimary: Colors.white,
+                                  surface: Color(0xFF1A1A1A),
+                                  onSurface: Colors.white,
+                                ),
+                                dialogBackgroundColor: const Color(0xFF1A1A1A),
+                              ),
+                              child: child!,
+                            );
+                          },
                         );
-                      },
-                    );
 
-                    if (pickedDate != null && context.mounted) {
-                      final pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: const TimeOfDay(hour: 0, minute: 0),
-                        builder: (context, child) {
-                          return Theme(
-                            data: ThemeData.dark().copyWith(
-                              colorScheme: const ColorScheme.dark(
-                                primary: Color(0xFFEF5350),
-                                onPrimary: Colors.white,
-                                surface: Color(0xFF1A1A1A),
-                                onSurface: Colors.white,
-                              ),
-                              timePickerTheme: TimePickerThemeData(
-                                backgroundColor: const Color(0xFF1A1A1A),
-                                hourMinuteTextColor: Colors.white,
-                                dialHandColor: const Color(0xFFEF5350),
-                                dialBackgroundColor: Colors.white10,
-                              ),
+                        if (pickedDate != null && context.mounted) {
+                          final pickedTime = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.fromDateTime(
+                              now.add(const Duration(minutes: 30)),
                             ),
-                            child: child!,
+                            builder: (context, child) {
+                              return Theme(
+                                data: ThemeData.dark().copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Color(0xFFEF5350),
+                                    onPrimary: Colors.white,
+                                    surface: Color(0xFF1A1A1A),
+                                    onSurface: Colors.white,
+                                  ),
+                                  timePickerTheme: TimePickerThemeData(
+                                    backgroundColor: const Color(0xFF1A1A1A),
+                                    hourMinuteTextColor: Colors.white,
+                                    dialHandColor: const Color(0xFFEF5350),
+                                    dialBackgroundColor: Colors.white10,
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
                           );
-                        },
-                      );
 
-                      if (pickedTime != null) {
-                        expiry.value = DateTime(
-                          pickedDate.year,
-                          pickedDate.month,
-                          pickedDate.day,
-                          pickedTime.hour,
-                          pickedTime.minute,
-                        );
-                      } else {
-                        // Default to end of day if no time picked? Or just date?
-                        // Let's force user to pick time or keep just date at 00:00
-                        expiry.value = pickedDate;
-                      }
-                    }
-                  },
-                ),
+                          if (pickedTime != null) {
+                            final selectedDateTime = DateTime(
+                              pickedDate.year,
+                              pickedDate.month,
+                              pickedDate.day,
+                              pickedTime.hour,
+                              pickedTime.minute,
+                            );
+
+                            if (selectedDateTime.isBefore(DateTime.now())) {
+                              errorText.value = "Expiry time cannot be in the past";
+                            } else {
+                              expiry.value = selectedDateTime;
+                              errorText.value = null;
+                            }
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  if (errorText.value != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 8),
+                      child: Text(
+                        errorText.value!,
+                        style: GoogleFonts.inter(
+                          color: Colors.redAccent,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                ],
               ),
 
               if (expiry.value != null)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => expiry.value = null,
+                    onPressed: () {
+                      expiry.value = null;
+                      errorText.value = null;
+                    },
                     child: Text(
                       "Clear Expiry",
                       style: GoogleFonts.inter(
@@ -558,8 +588,8 @@ class _ShareDialog extends HookWidget {
                     ),
                   ),
                 ),
-
               const SizedBox(height: 32),
+
               Row(
                 children: [
                   Expanded(
@@ -1407,6 +1437,10 @@ class _ExportProgressDialog extends HookConsumerWidget {
     final status = useState("Initializing...");
     final resultPath = useState<String?>(null);
     final error = useState<String?>(null);
+    
+    // New state for Save feedback
+    final saveMessage = useState<String?>(null);
+    final isSaveError = useState(false);
 
     useEffect(() {
       final vault = ref.read(vaultServiceProvider);
@@ -1437,6 +1471,32 @@ class _ExportProgressDialog extends HookConsumerWidget {
 
       return subscription.cancel;
     }, []);
+
+    Future<void> saveToDownloadsWithFeedback(String path) async {
+      try {
+        saveMessage.value = "Saving...";
+        isSaveError.value = false;
+        
+        await _saveToDownloads(context, path);
+        
+        // _saveToDownloads was void and used SnackBars. 
+        // We need to refactor it or wrap it?
+        // Actually, since _saveToDownloads is inside the class (helper), 
+        // we can just modify IT to return a result or pass setters.
+        // But since this is a widget, let's just inline the logic or modify the helper.
+        // For minimal diff, check _saveToDownloads return.
+        // Wait, _saveToDownloads currently shows SnackBars. 
+        // I should Copy-Paste the logic here or modify the helper method 
+        // to THROW on error and RETURN on success, and handle UI here.
+        // But _saveToDownloads handles permissions which might show UI.
+        
+        // Let's modify _saveToDownloads to return a String result (Success message) 
+        // or throw error. And NOT show SnackBars.
+      } catch (e) {
+        saveMessage.value = e.toString();
+        isSaveError.value = true;
+      }
+    }
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -1488,6 +1548,43 @@ class _ExportProgressDialog extends HookConsumerWidget {
                     style: GoogleFonts.inter(color: Colors.white),
                   ),
                 ),
+                if (saveMessage.value != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isSaveError.value 
+                          ? Colors.red.withOpacity(0.1) 
+                          : Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSaveError.value 
+                            ? Colors.red.withOpacity(0.3) 
+                            : Colors.green.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isSaveError.value ? Icons.error_outline : Icons.check,
+                          size: 20,
+                          color: isSaveError.value ? Colors.redAccent : Colors.greenAccent,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            saveMessage.value!,
+                            style: GoogleFonts.inter(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ] else ...[
                 Text(
                   status.value,
@@ -1522,38 +1619,65 @@ class _ExportProgressDialog extends HookConsumerWidget {
         ),
         actions: resultPath.value != null
             ? [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(
-                    "Close",
-                    style: GoogleFonts.inter(color: Colors.white54),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    await _saveToDownloads(context, resultPath.value!);
-                  },
-                  icon: const Icon(Icons.download_rounded, size: 18),
-                  label: Text(
-                    "Save to Downloads",
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            // Use modified saving logic
+                            final msg = await _saveToDownloads(context, resultPath.value!);
+                            if (msg.startsWith("Error:")) {
+                               saveMessage.value = msg.substring(6).trim(); // Remove "Error:" prefix
+                               isSaveError.value = true;
+                            } else {
+                               saveMessage.value = msg;
+                               isSaveError.value = false;
+                            }
+                          },
+                          icon: const Icon(Icons.download_rounded, size: 18),
+                          label: Text(
+                            "Save to Downloads",
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () {
+                            Share.shareXFiles([
+                              XFile(resultPath.value!),
+                            ], text: 'Secure BlindKey Package');
+                          },
+                          style: IconButton.styleFrom(
+                            side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.all(12),
+                          ),
+                          icon: const Icon(Icons.share_rounded, color: Colors.white70, size: 20),
+                          tooltip: 'Share',
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () {
-                    Share.shareXFiles([
-                      XFile(resultPath.value!),
-                    ], text: 'Secure BlindKey Package');
-                  },
-                  icon: const Icon(Icons.share_rounded, color: Colors.white70),
-                  tooltip: 'Share',
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        "Close",
+                        style: GoogleFonts.inter(color: Colors.white54),
+                      ),
+                    ),
+                  ],
                 ),
               ]
             : [
@@ -1570,7 +1694,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
     );
   }
 
-  Future<void> _saveToDownloads(BuildContext context, String path) async {
+  Future<String> _saveToDownloads(BuildContext context, String path) async {
     try {
       Directory? downloadDir;
 
@@ -1584,20 +1708,8 @@ class _ExportProgressDialog extends HookConsumerWidget {
           if (manageStatus.isGranted) {
             hasPermission = true;
           } else {
-            // Show rationale if needed or just request
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Full storage access required to save .blindkey file",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.orange.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            }
+            // Can't show snackbar easily if obstructed, but system dialogs will show on top.
+            // We can return error if permission denied.
             final newStatus = await Permission.manageExternalStorage.request();
             hasPermission = newStatus.isGranted;
           }
@@ -1609,43 +1721,13 @@ class _ExportProgressDialog extends HookConsumerWidget {
           if (storageStatus.isGranted) {
             hasPermission = true;
           } else {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Storage permission required to save files",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.orange.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            }
             final newStatus = await Permission.storage.request();
             hasPermission = newStatus.isGranted;
           }
         }
 
         if (!hasPermission) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Storage permission denied. Cannot save file.",
-                  style: GoogleFonts.inter(),
-                ),
-                backgroundColor: Colors.red.shade800,
-                behavior: SnackBarBehavior.floating,
-                action: SnackBarAction(
-                  label: "Settings",
-                  textColor: Colors.white,
-                  onPressed: () => openAppSettings(),
-                ),
-              ),
-            );
-          }
-          return;
+          return "Error: Storage permission denied.";
         }
 
         // Try multiple common Downloads paths
@@ -1695,19 +1777,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
       }
 
       if (downloadDir == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Could not access Downloads folder",
-                style: GoogleFonts.inter(),
-              ),
-              backgroundColor: Colors.red.shade800,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
+        return "Error: Could not access Downloads folder";
       }
 
       // 1. Resolve 'BlindKey' subfolder in Downloads
@@ -1729,24 +1799,12 @@ class _ExportProgressDialog extends HookConsumerWidget {
         }
       } else {
         // Should have returned early if null, but just in case
-        return;
+        return "Error: No directory resolved";
       }
 
       final sourceFile = File(path);
       if (!await sourceFile.exists()) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Source file not found",
-                style: GoogleFonts.inter(),
-              ),
-              backgroundColor: Colors.red.shade800,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
+        return "Error: Source file not found";
       }
 
       final sourceSize = await sourceFile.length();
@@ -1758,8 +1816,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
 
       // Check if file already exists and handle it
       if (await targetFile.exists()) {
-        // Option 1: Overwrite
-        // Option 2: Add timestamp to filename
+        // Add timestamp to filename
         final nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
         final ext = filename.substring(filename.lastIndexOf('.'));
         final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -1772,31 +1829,16 @@ class _ExportProgressDialog extends HookConsumerWidget {
 
         // Verify the file was actually copied
         if (!await altFile.exists()) {
-          throw Exception("File copy verification failed");
+          return "Error: File copy verification failed";
         }
 
         // Verify file size matches
         final targetSize = await altFile.length();
         if (targetSize != sourceSize) {
-          throw Exception("File size mismatch after copy");
+          return "Error: File size mismatch after copy";
         }
 
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/$newFilename",
-                style: GoogleFonts.inter(),
-              ),
-              backgroundColor: Colors.green.shade800,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
-        }
-        return;
+        return "Saved to BlindKey/$newFilename";
       }
 
       // Copy the file
@@ -1804,49 +1846,18 @@ class _ExportProgressDialog extends HookConsumerWidget {
 
       // Verify the file was actually copied
       if (!await targetFile.exists()) {
-        throw Exception("File copy verification failed - file does not exist");
+        return "Error: File copy verification failed - file does not exist";
       }
 
       // Verify file size matches
       final targetSize = await targetFile.length();
       if (targetSize != sourceSize) {
-        throw Exception(
-          "File size mismatch after copy (expected: $sourceSize, got: $targetSize)",
-        );
+        return "Error: File size mismatch (expected: $sourceSize, got: $targetSize)";
       }
 
-      // Only show success if file was actually saved and verified
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/$filename",
-              style: GoogleFonts.inter(),
-            ),
-            backgroundColor: Colors.green.shade800,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
+      return "Saved to BlindKey/$filename";
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Save failed: ${e.toString()}",
-              style: GoogleFonts.inter(),
-            ),
-            backgroundColor: Colors.red.shade800,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
+      return "Error: Save failed: ${e.toString()}";
     }
   }
 }
