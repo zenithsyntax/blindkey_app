@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:blindkey_app/application/providers.dart';
+import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
 import 'package:cryptography/cryptography.dart';
@@ -147,6 +148,8 @@ class UploadProgress extends _$UploadProgress {
 
       // Invalidate file list of that folder
       ref.invalidate(fileNotifierProvider(folder.id));
+      // Invalidate folder stats to update size in real-time
+      ref.invalidate(folderStatsProvider(folder.id));
     } catch (e) {
       // Handle error state
       state = {...state, path: -1.0}; // -1 for error

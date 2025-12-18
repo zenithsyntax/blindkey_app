@@ -5,6 +5,7 @@ import 'dart:ui'; // Added for BackdropFilter
 
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
+import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
@@ -735,6 +736,8 @@ class _FileThumbnail extends HookConsumerWidget {
 
                 // Refresh the file list to remove the deleted file
                 ref.invalidate(fileNotifierProvider(file.folderId));
+                // Invalidate folder stats to update size in real-time
+                ref.invalidate(folderStatsProvider(file.folderId));
 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
