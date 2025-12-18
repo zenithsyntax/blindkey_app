@@ -88,8 +88,8 @@ class FolderViewPage extends HookConsumerWidget {
                 ),
                 centerTitle: false,
                 actions: [
-                  // Hide export/share button if folder has expired files or is empty
-                  if (!hasExpiredFiles && !isEmpty)
+                  // Hide export/share button if folder has expired files, is empty, or extraction is not allowed
+                  if (!hasExpiredFiles && !isEmpty && folder.allowSave)
                     IconButton(
                       icon: const Icon(
                         Icons.share_rounded,
@@ -1146,7 +1146,7 @@ class _FileThumbnail extends HookConsumerWidget {
       // Show loading indicator for Metadata decryption
       // We can use a small snackbar or just await, as it is fast.
       // Keeping original behavior but removing the long-duration snackbar that was there for the whole process.
-      
+
       // Decrypt metadata to get filename
       final metaRes = await vault.decryptMetadata(
         file: file,
@@ -1186,49 +1186,49 @@ class _FileThumbnail extends HookConsumerWidget {
             final newStatus = await Permission.manageExternalStorage.request();
             hasPermission = newStatus.isGranted;
           }
-        } 
-        
+        }
+
         // Fallback or specific check for older Android versions (Android < 11)
         if (!hasPermission && manageStatus.isRestricted) {
-           var storageStatus = await Permission.storage.status;
-           if (storageStatus.isGranted) {
-             hasPermission = true;
-           } else {
-             if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      "Storage permission required to save files",
-                      style: GoogleFonts.inter(),
-                    ),
-                    backgroundColor: Colors.orange.shade800,
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(seconds: 2),
+          var storageStatus = await Permission.storage.status;
+          if (storageStatus.isGranted) {
+            hasPermission = true;
+          } else {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Storage permission required to save files",
+                    style: GoogleFonts.inter(),
                   ),
-                );
-             }
-             final newStatus = await Permission.storage.request();
-             hasPermission = newStatus.isGranted;
-           }
+                  backgroundColor: Colors.orange.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            final newStatus = await Permission.storage.request();
+            hasPermission = newStatus.isGranted;
+          }
         }
 
         if (!hasPermission) {
           if (context.mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Storage permission denied. Cannot save file.",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.red.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  action: SnackBarAction(
-                    label: "Settings",
-                    textColor: Colors.white,
-                    onPressed: () => openAppSettings(),
-                  ),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  "Storage permission denied. Cannot save file.",
+                  style: GoogleFonts.inter(),
                 ),
-             );
+                backgroundColor: Colors.red.shade800,
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: "Settings",
+                  textColor: Colors.white,
+                  onPressed: () => openAppSettings(),
+                ),
+              ),
+            );
           }
           return;
         }
@@ -1246,7 +1246,11 @@ class _FileThumbnail extends HookConsumerWidget {
           final externalDir = await getExternalStorageDirectory();
           if (externalDir != null) {
             // Navigate to Downloads from external storage directory
-            final parentDir = externalDir.parent.parent.parent.parent; // usually /storage/emulated/0/Android/data/pkg -> /storage/emulated/0
+            final parentDir = externalDir
+                .parent
+                .parent
+                .parent
+                .parent; // usually /storage/emulated/0/Android/data/pkg -> /storage/emulated/0
             final downloadsPath = '${parentDir.path}/Download';
             possiblePaths.insert(0, downloadsPath);
           }
@@ -1298,17 +1302,19 @@ class _FileThumbnail extends HookConsumerWidget {
       // 1. Resolve 'BlindKey' subfolder in Downloads
       Directory? finalDir;
       if (downloadDir != null) {
-        final blindKeyDir = Directory("${downloadDir.path}${Platform.pathSeparator}BlindKey");
-         if (!await blindKeyDir.exists()) {
+        final blindKeyDir = Directory(
+          "${downloadDir.path}${Platform.pathSeparator}BlindKey",
+        );
+        if (!await blindKeyDir.exists()) {
           try {
-             await blindKeyDir.create(recursive: true);
-             finalDir = blindKeyDir;
-          } catch(e) {
-             // If creation fails, fallback to root Downloads
-             finalDir = downloadDir; 
+            await blindKeyDir.create(recursive: true);
+            finalDir = blindKeyDir;
+          } catch (e) {
+            // If creation fails, fallback to root Downloads
+            finalDir = downloadDir;
           }
         } else {
-             finalDir = blindKeyDir;
+          finalDir = blindKeyDir;
         }
       } else {
         return;
@@ -1317,8 +1323,7 @@ class _FileThumbnail extends HookConsumerWidget {
       // Get filename from metadata
       final filename = meta.fileName;
       // Use finalDir
-      final targetPath =
-          "${finalDir.path}${Platform.pathSeparator}$filename";
+      final targetPath = "${finalDir.path}${Platform.pathSeparator}$filename";
       final targetFile = File(targetPath);
 
       // Handle file name conflicts
@@ -1337,29 +1342,29 @@ class _FileThumbnail extends HookConsumerWidget {
           context: context,
           barrierDismissible: false,
           builder: (context) => _DownloadProgressDialog(
-             file: file, 
-             fileName: meta.fileName,
-             folderKey: folderKey, 
-             savePath: finalPath,
-             totalSize: meta.size,
+            file: file,
+            fileName: meta.fileName,
+            folderKey: folderKey,
+            savePath: finalPath,
+            totalSize: meta.size,
           ),
         );
 
         if (success == true) {
-             ScaffoldMessenger.of(context).clearSnackBars();
-             ScaffoldMessenger.of(context).showSnackBar(
-               SnackBar(
-                 content: Text(
-                   "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/${finalPath.split(Platform.pathSeparator).last}",
-                   style: GoogleFonts.inter(),
-                 ),
-                 backgroundColor: Colors.green.shade800,
-                 behavior: SnackBarBehavior.floating,
-                 shape: RoundedRectangleBorder(
-                   borderRadius: BorderRadius.circular(10),
-                 ),
-               ),
-             );
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/${finalPath.split(Platform.pathSeparator).last}",
+                style: GoogleFonts.inter(),
+              ),
+              backgroundColor: Colors.green.shade800,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -1596,49 +1601,49 @@ class _ExportProgressDialog extends HookConsumerWidget {
             final newStatus = await Permission.manageExternalStorage.request();
             hasPermission = newStatus.isGranted;
           }
-        } 
-        
+        }
+
         // Fallback for Android < 11
         if (!hasPermission && manageStatus.isRestricted) {
-           var storageStatus = await Permission.storage.status;
-           if (storageStatus.isGranted) {
-             hasPermission = true;
-           } else {
-             if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      "Storage permission required to save files",
-                      style: GoogleFonts.inter(),
-                    ),
-                    backgroundColor: Colors.orange.shade800,
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(seconds: 2),
+          var storageStatus = await Permission.storage.status;
+          if (storageStatus.isGranted) {
+            hasPermission = true;
+          } else {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Storage permission required to save files",
+                    style: GoogleFonts.inter(),
                   ),
-                );
-             }
-             final newStatus = await Permission.storage.request();
-             hasPermission = newStatus.isGranted;
-           }
+                  backgroundColor: Colors.orange.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            final newStatus = await Permission.storage.request();
+            hasPermission = newStatus.isGranted;
+          }
         }
 
         if (!hasPermission) {
           if (context.mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Storage permission denied. Cannot save file.",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.red.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  action: SnackBarAction(
-                    label: "Settings",
-                    textColor: Colors.white,
-                    onPressed: () => openAppSettings(),
-                  ),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  "Storage permission denied. Cannot save file.",
+                  style: GoogleFonts.inter(),
                 ),
-             );
+                backgroundColor: Colors.red.shade800,
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: "Settings",
+                  textColor: Colors.white,
+                  onPressed: () => openAppSettings(),
+                ),
+              ),
+            );
           }
           return;
         }
@@ -1708,17 +1713,19 @@ class _ExportProgressDialog extends HookConsumerWidget {
       // 1. Resolve 'BlindKey' subfolder in Downloads
       Directory? finalDir;
       if (downloadDir != null) {
-        final blindKeyDir = Directory("${downloadDir.path}${Platform.pathSeparator}BlindKey");
-         if (!await blindKeyDir.exists()) {
+        final blindKeyDir = Directory(
+          "${downloadDir.path}${Platform.pathSeparator}BlindKey",
+        );
+        if (!await blindKeyDir.exists()) {
           try {
-             await blindKeyDir.create(recursive: true);
-             finalDir = blindKeyDir;
-          } catch(e) {
-             // If creation fails, fallback to root Downloads
-             finalDir = downloadDir; 
+            await blindKeyDir.create(recursive: true);
+            finalDir = blindKeyDir;
+          } catch (e) {
+            // If creation fails, fallback to root Downloads
+            finalDir = downloadDir;
           }
         } else {
-             finalDir = blindKeyDir;
+          finalDir = blindKeyDir;
         }
       } else {
         // Should have returned early if null, but just in case
@@ -1744,7 +1751,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
 
       final sourceSize = await sourceFile.length();
       final filename = path.split(Platform.pathSeparator).last;
-      
+
       // Use finalDir instead of downloadDir
       final newPath = "${finalDir.path}${Platform.pathSeparator}$filename";
       final targetFile = File(newPath);
@@ -1757,8 +1764,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
         final ext = filename.substring(filename.lastIndexOf('.'));
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final newFilename = '$nameWithoutExt$timestamp$ext';
-        final altPath =
-            "${finalDir.path}${Platform.pathSeparator}$newFilename";
+        final altPath = "${finalDir.path}${Platform.pathSeparator}$newFilename";
         final altFile = File(altPath);
 
         // Copy to alternate path
@@ -1872,16 +1878,18 @@ class _DownloadProgressDialog extends HookConsumerWidget {
         try {
           final vault = ref.read(vaultServiceProvider);
           final stream = vault.decryptFileStream(
-              file: file, folderKey: folderKey);
-          
+            file: file,
+            folderKey: folderKey,
+          );
+
           final sink = File(savePath).openWrite();
           int received = 0;
 
           try {
             await for (final chunk in stream) {
               if (!mounted) {
-                 await sink.close();
-                 return; // Cancelled
+                await sink.close();
+                return; // Cancelled
               }
               sink.add(chunk);
               received += chunk.length;
@@ -1893,18 +1901,21 @@ class _DownloadProgressDialog extends HookConsumerWidget {
           } finally {
             await sink.close();
           }
-          
+
           if (!mounted) return;
-          
+
           isDone.value = true;
           // Verify
           final savedFile = File(savePath);
-          if (!await savedFile.exists() || await savedFile.length() != totalSize) {
-             throw Exception("File verification failed (size mismatch or missing)");
+          if (!await savedFile.exists() ||
+              await savedFile.length() != totalSize) {
+            throw Exception(
+              "File verification failed (size mismatch or missing)",
+            );
           }
 
           if (context.mounted) {
-             Navigator.pop(context, true); // Return true for success
+            Navigator.pop(context, true); // Return true for success
           }
         } catch (e) {
           if (mounted) error.value = e.toString();
@@ -1976,7 +1987,9 @@ class _DownloadProgressDialog extends HookConsumerWidget {
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      totalSize > 0 ? "${(progress.value * 100).toInt()}%" : "...",
+                      totalSize > 0
+                          ? "${(progress.value * 100).toInt()}%"
+                          : "...",
                       style: GoogleFonts.robotoMono(
                         fontSize: 12,
                         color: Colors.white54,
@@ -1991,8 +2004,11 @@ class _DownloadProgressDialog extends HookConsumerWidget {
               ? [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: Text("Close", style: GoogleFonts.inter(color: Colors.white70)),
-                  )
+                    child: Text(
+                      "Close",
+                      style: GoogleFonts.inter(color: Colors.white70),
+                    ),
+                  ),
                 ]
               : null,
         ),

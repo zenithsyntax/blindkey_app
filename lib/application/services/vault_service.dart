@@ -573,6 +573,7 @@ class VaultService {
             salt: base64Encode(salt),
             verificationHash: map['verificationHash'],
             createdAt: DateTime.now(),
+            allowSave: map['allowSave'] ?? true,
           );
 
           await _folderRepository.saveFolder(folder);
@@ -932,6 +933,7 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
       'verificationHash': args.folderVerificationHash,
       'files': exportMetadataList.map((e) => e.toJson()).toList(),
       'expiryDate': args.expiry?.toIso8601String(),
+      'allowSave': args.allowSave,
     };
 
     final manifestJson = jsonEncode(manifest);
