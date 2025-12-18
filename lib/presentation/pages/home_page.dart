@@ -1,6 +1,8 @@
 import 'package:blindkey_app/application/providers.dart';
+import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
+import 'package:blindkey_app/presentation/pages/settings/security_settings_page.dart';
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/presentation/pages/folder_view_page.dart';
 import 'package:file_picker/file_picker.dart';
@@ -41,7 +43,7 @@ class HomePage extends HookConsumerWidget {
               ),
             ),
           ),
-          
+
           // Noise texture overlay (optional, simulated with opacity)
           // For a cleaner look, we'll stick to a smooth gradient but added a very subtle top shimmer
           Positioned(
@@ -55,7 +57,9 @@ class HomePage extends HookConsumerWidget {
                   center: Alignment.topCenter,
                   radius: 1.5,
                   colors: [
-                    const Color(0xFFE53935).withOpacity(0.08), // Professional Red Glint
+                    const Color(
+                      0xFFE53935,
+                    ).withOpacity(0.08), // Professional Red Glint
                     Colors.transparent,
                   ],
                 ),
@@ -146,9 +150,13 @@ class HomePage extends HookConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE53935).withOpacity(0.1), // Red accent container
+                  color: const Color(
+                    0xFFE53935,
+                  ).withOpacity(0.1), // Red accent container
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE53935).withOpacity(0.2)),
+                  border: Border.all(
+                    color: const Color(0xFFE53935).withOpacity(0.2),
+                  ),
                 ),
                 child: const Icon(
                   Icons.shield_outlined,
@@ -181,24 +189,54 @@ class HomePage extends HookConsumerWidget {
               ),
             ],
           ),
-          
-          // Import Button (Minimalist)
-          IconButton(
-            onPressed: () => _importVault(context, ref),
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.white.withOpacity(0.05),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.white.withOpacity(0.1)),
+
+          // Icons aligned to the right
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: () => _importVault(context, ref),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.05),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                ),
+                icon: const Icon(
+                  Icons.upload_file_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                tooltip: 'Import Vault',
               ),
-              padding: const EdgeInsets.all(12),
-            ),
-            icon: const Icon(
-              Icons.upload_file_outlined,
-              color: Colors.white70,
-              size: 20,
-            ),
-            tooltip: 'Import Vault',
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () {
+                  // Navigation to settings
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SecuritySettingsPage(),
+                    ),
+                  );
+                },
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.05),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                ),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                tooltip: 'Settings',
+              ),
+            ],
           ),
         ],
       ),
@@ -314,9 +352,7 @@ class HomePage extends HookConsumerWidget {
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.symmetric(
-            horizontal: isLargeScreen ? 40 : 24,
-          ),
+          padding: EdgeInsets.symmetric(horizontal: isLargeScreen ? 40 : 24),
           sliver: SliverGrid(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: isLargeScreen ? 3 : (isTablet ? 2 : 1),
@@ -377,7 +413,9 @@ class HomePage extends HookConsumerWidget {
                       decoration: BoxDecoration(
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white.withOpacity(0.05)),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.05),
+                        ),
                       ),
                       child: const Icon(
                         Icons.lock_outline_rounded,
@@ -405,11 +443,15 @@ class HomePage extends HookConsumerWidget {
                         }
                       },
                       itemBuilder: (context) => [
-                         PopupMenuItem(
+                        PopupMenuItem(
                           value: 'rename',
                           child: Row(
                             children: [
-                              const Icon(Icons.edit_outlined, size: 18, color: Colors.white),
+                              const Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: Colors.white,
+                              ),
                               const SizedBox(width: 12),
                               Text(
                                 'Rename',
@@ -418,15 +460,21 @@ class HomePage extends HookConsumerWidget {
                             ],
                           ),
                         ),
-                         PopupMenuItem(
+                        PopupMenuItem(
                           value: 'delete',
                           child: Row(
                             children: [
-                              const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                              const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Colors.redAccent,
+                              ),
                               const SizedBox(width: 12),
                               Text(
                                 'Delete',
-                                style: GoogleFonts.inter(color: Colors.redAccent),
+                                style: GoogleFonts.inter(
+                                  color: Colors.redAccent,
+                                ),
                               ),
                             ],
                           ),
@@ -452,7 +500,9 @@ class HomePage extends HookConsumerWidget {
                     const SizedBox(height: 6),
                     Consumer(
                       builder: (context, ref, child) {
-                        final statsAsync = ref.watch(folderStatsProvider(folder.id));
+                        final statsAsync = ref.watch(
+                          folderStatsProvider(folder.id),
+                        );
                         return statsAsync.when(
                           data: (stats) => Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,8 +520,8 @@ class HomePage extends HookConsumerWidget {
                                 '${stats.sizeString} / 500 MB',
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
-                                  color: stats.totalSize > 500 * 1024 * 1024 
-                                      ? Colors.red.shade300 
+                                  color: stats.totalSize > 500 * 1024 * 1024
+                                      ? Colors.red.shade300
                                       : Colors.white38,
                                 ),
                               ),
@@ -479,11 +529,17 @@ class HomePage extends HookConsumerWidget {
                           ),
                           loading: () => Text(
                             'Loading...',
-                            style: GoogleFonts.inter(fontSize: 11, color: Colors.white24),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.white24,
+                            ),
                           ),
                           error: (_, __) => Text(
                             '--',
-                            style: GoogleFonts.inter(fontSize: 11, color: Colors.white24),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.white24,
+                            ),
                           ),
                         );
                       },
@@ -512,7 +568,9 @@ class HomePage extends HookConsumerWidget {
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: isPrimary ? Colors.white : Colors.white.withOpacity(0.05),
+          backgroundColor: isPrimary
+              ? Colors.white
+              : Colors.white.withOpacity(0.05),
           foregroundColor: isPrimary ? Colors.black : Colors.white,
           elevation: 0,
           shadowColor: Colors.transparent,
@@ -566,10 +624,7 @@ class HomePage extends HookConsumerWidget {
             Text(
               error,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: Colors.white54,
-              ),
+              style: GoogleFonts.inter(fontSize: 13, color: Colors.white54),
             ),
           ],
         ),
@@ -667,7 +722,10 @@ class HomePage extends HookConsumerWidget {
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
-                          prefixIcon: const Icon(Icons.lock_outline, color: Colors.white30),
+                          prefixIcon: const Icon(
+                            Icons.lock_outline,
+                            color: Colors.white30,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -675,42 +733,58 @@ class HomePage extends HookConsumerWidget {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: isLoading.value ? null : () async {
-                            isLoading.value = true;
-                            errorText.value = null;
-                            
-                            await Future.delayed(const Duration(milliseconds: 50));
-                            
-                            try {
-                              await ref
-                                  .read(folderNotifierProvider.notifier)
-                                  .importFolder(path, passwordController.text);
-                              
-                              if (context.mounted) {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Vault imported successfully',
-                                      style: GoogleFonts.inter(),
-                                    ),
-                                    backgroundColor: Colors.green.shade800,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                isLoading.value = false;
-                                // Can show error in text field or snackbar. Keeps snackbar for now but clears loading
-                                // Actually, let's use errorText for better UX
-                                errorText.value = 'Import failed: Incorrect password or corrupted file';
-                              }
-                            }
-                          },
+                          onPressed: isLoading.value
+                              ? null
+                              : () async {
+                                  isLoading.value = true;
+                                  errorText.value = null;
+
+                                  await Future.delayed(
+                                    const Duration(milliseconds: 50),
+                                  );
+
+                                  try {
+                                    await ref
+                                        .read(folderNotifierProvider.notifier)
+                                        .importFolder(
+                                          path,
+                                          passwordController.text,
+                                        );
+
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Vault imported successfully',
+                                            style: GoogleFonts.inter(),
+                                          ),
+                                          backgroundColor:
+                                              Colors.green.shade800,
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      isLoading.value = false;
+                                      
+                                      String msg = 'Import failed: Incorrect password or corrupted file';
+                                      if (e is Failure && e == const Failure.fileExpired()) {
+                                        msg = 'This vault file has expired';
+                                      }
+                                      
+                                      errorText.value = msg;
+                                    }
+                                  }
+                                },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: Colors.black,
@@ -720,34 +794,44 @@ class HomePage extends HookConsumerWidget {
                             disabledBackgroundColor: Colors.white24,
                             disabledForegroundColor: Colors.white38,
                           ),
-                          child: isLoading.value 
-                            ? const SizedBox(
-                                height: 20, 
-                                width: 20, 
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)
-                              )
-                            : Text(
-                                'Unlock & Import',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                          child: isLoading.value
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white70,
+                                  ),
+                                )
+                              : Text(
+                                  'Unlock & Import',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
                         ),
                       ),
                       if (isLoading.value) ...[
-                         const SizedBox(height: 16),
-                         TextButton(
-                           onPressed: null, // Cannot cancel easily during import if it's atomic
-                           child: Text("Importing...", style: GoogleFonts.inter(color: Colors.white30)),
-                         )
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed:
+                              null, // Cannot cancel easily during import if it's atomic
+                          child: Text(
+                            "Importing...",
+                            style: GoogleFonts.inter(color: Colors.white30),
+                          ),
+                        ),
                       ] else ...[
-                         const SizedBox(height: 16),
-                         TextButton(
-                           onPressed: () => Navigator.pop(context),
-                           child: Text("Cancel", style: GoogleFonts.inter(color: Colors.white54)),
-                         )
-                      ]
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            "Cancel",
+                            style: GoogleFonts.inter(color: Colors.white54),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -765,14 +849,11 @@ class HomePage extends HookConsumerWidget {
     _showUnlockDialog(context, ref, folder);
   }
 
-  void _showUnlockDialog(
-    BuildContext context,
-    WidgetRef ref,
-    dynamic folder,
-  ) {
+  void _showUnlockDialog(BuildContext context, WidgetRef ref, dynamic folder) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Prevent dismissing while loading if we want, but let's allow if not loading
+      barrierDismissible:
+          false, // Prevent dismissing while loading if we want, but let's allow if not loading
       builder: (context) => HookConsumer(
         builder: (context, ref, child) {
           final passwordController = useTextEditingController();
@@ -841,15 +922,20 @@ class HomePage extends HookConsumerWidget {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.2),
+                          ),
                         ),
-                        prefixIcon: const Icon(Icons.key_rounded, color: Colors.white30),
+                        prefixIcon: const Icon(
+                          Icons.key_rounded,
+                          color: Colors.white30,
+                        ),
                       ),
                       onSubmitted: (_) {
-                         // Trigger unlock on enter
-                         if (!isLoading.value) {
-                            // ... duplicate logic or call function
-                         }
+                        // Trigger unlock on enter
+                        if (!isLoading.value) {
+                          // ... duplicate logic or call function
+                        }
                       },
                     ),
                     const SizedBox(height: 32),
@@ -857,7 +943,9 @@ class HomePage extends HookConsumerWidget {
                       children: [
                         Expanded(
                           child: TextButton(
-                            onPressed: isLoading.value ? null : () => Navigator.pop(context),
+                            onPressed: isLoading.value
+                                ? null
+                                : () => Navigator.pop(context),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.white60,
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -867,50 +955,63 @@ class HomePage extends HookConsumerWidget {
                             ),
                             child: Text(
                               'Cancel',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: isLoading.value ? null : () async {
-                              isLoading.value = true;
-                              errorText.value = null;
-                              
-                              // Slight delay to ensure UI updates to loading state before potential heavy crypto work
-                              await Future.delayed(const Duration(milliseconds: 50));
-                              
-                              try {
-                                final result = await ref
-                                    .read(folderNotifierProvider.notifier)
-                                    .unlockFolder(folder.id, passwordController.text);
-                                
-                                if (context.mounted) {
-                                  if (result != null && result is SecretKey) {
-                                    Navigator.pop(context);
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => FolderViewPage(
-                                          folder: folder,
-                                          folderKey: result,
-                                        ),
-                                      ),
+                            onPressed: isLoading.value
+                                ? null
+                                : () async {
+                                    isLoading.value = true;
+                                    errorText.value = null;
+
+                                    // Slight delay to ensure UI updates to loading state before potential heavy crypto work
+                                    await Future.delayed(
+                                      const Duration(milliseconds: 50),
                                     );
-                                  } else {
-                                    isLoading.value = false;
-                                    errorText.value = 'Incorrect password';
-                                    passwordController.clear();
-                                  }
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  isLoading.value = false;
-                                  errorText.value = 'An error occurred: $e';
-                                }
-                              }
-                            },
+
+                                    try {
+                                      final result = await ref
+                                          .read(folderNotifierProvider.notifier)
+                                          .unlockFolder(
+                                            folder.id,
+                                            passwordController.text,
+                                          );
+
+                                      if (context.mounted) {
+                                        if (result != null &&
+                                            result is SecretKey) {
+                                          Navigator.pop(context);
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  FolderViewPage(
+                                                    folder: folder,
+                                                    folderKey: result,
+                                                  ),
+                                            ),
+                                          );
+                                        } else {
+                                          isLoading.value = false;
+                                          errorText.value =
+                                              'Incorrect password';
+                                          passwordController.clear();
+                                        }
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        isLoading.value = false;
+                                        errorText.value =
+                                            'An error occurred: $e';
+                                      }
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: Colors.black,
@@ -922,21 +1023,21 @@ class HomePage extends HookConsumerWidget {
                               disabledBackgroundColor: Colors.white24,
                               disabledForegroundColor: Colors.white38,
                             ),
-                            child: isLoading.value 
-                              ? const SizedBox(
-                                  height: 20, 
-                                  width: 20, 
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2, 
-                                    color: Colors.white70
+                            child: isLoading.value
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white70,
+                                    ),
                                   )
-                                )
-                              : Text(
-                                  'Unlock',
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w600,
+                                : Text(
+                                    'Unlock',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                ),
                           ),
                         ),
                       ],
@@ -997,7 +1098,10 @@ class HomePage extends HookConsumerWidget {
                     Expanded(
                       child: TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white60)),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(color: Colors.white60),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1005,16 +1109,23 @@ class HomePage extends HookConsumerWidget {
                       child: ElevatedButton(
                         onPressed: () async {
                           if (controller.text.isNotEmpty) {
-                            await ref.read(folderNotifierProvider.notifier).renameFolder(folder.id, controller.text);
+                            await ref
+                                .read(folderNotifierProvider.notifier)
+                                .renameFolder(folder.id, controller.text);
                             if (context.mounted) Navigator.pop(context);
                           }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        child: Text(
+                          'Save',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],
@@ -1038,7 +1149,10 @@ class HomePage extends HookConsumerWidget {
             borderRadius: BorderRadius.circular(20),
             side: BorderSide(color: Colors.white.withOpacity(0.08)),
           ),
-          title: Text('Delete Vault?', style: GoogleFonts.inter(color: Colors.white)),
+          title: Text(
+            'Delete Vault?',
+            style: GoogleFonts.inter(color: Colors.white),
+          ),
           content: Text(
             'This will permanently delete "${folder.name}" and all its contents. This action cannot be undone.',
             style: GoogleFonts.inter(color: Colors.white70),
@@ -1046,14 +1160,22 @@ class HomePage extends HookConsumerWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white60)),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: Colors.white60),
+              ),
             ),
             TextButton(
               onPressed: () async {
-                await ref.read(folderNotifierProvider.notifier).deleteFolder(folder.id);
+                await ref
+                    .read(folderNotifierProvider.notifier)
+                    .deleteFolder(folder.id);
                 if (context.mounted) Navigator.pop(context);
               },
-              child: Text('Delete', style: GoogleFonts.inter(color: Colors.redAccent)),
+              child: Text(
+                'Delete',
+                style: GoogleFonts.inter(color: Colors.redAccent),
+              ),
             ),
           ],
         ),

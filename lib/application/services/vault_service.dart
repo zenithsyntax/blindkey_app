@@ -514,6 +514,16 @@ class VaultService {
           final json = utf8.decode(clearBytes);
           final map = jsonDecode(json);
           
+          // Check Global Expiry from Manifest
+          if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
+            final expiryIso = map['expiryDate'] as String;
+            final expiryDate = DateTime.tryParse(expiryIso);
+            if (expiryDate != null && DateTime.now().isAfter(expiryDate)) {
+               // Vault is expired
+               return left(const Failure.fileExpired());
+            }
+          }
+          
           // Import Folder
           // Check if folder exists? Import as new?
           // Let's import as new (rename if collision?).
@@ -542,7 +552,7 @@ class VaultService {
           final vaultPath = vaultPathRes.getOrElse(() => '');
           
           for (final meta in filesList) {
-             // Check Expiry
+             // Check Expiry (File Level)
              if (meta.expiryDate != null && DateTime.now().isAfter(meta.expiryDate!)) {
                continue; // process next
              }
@@ -881,6 +891,7 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
       'name': args.folderName,
       'verificationHash': args.folderVerificationHash, 
       'files': exportMetadataList.map((e) => e.toJson()).toList(),
+      'expiryDate': args.expiry?.toIso8601String(),
     };
     
     final manifestJson = jsonEncode(manifest);

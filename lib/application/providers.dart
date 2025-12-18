@@ -5,10 +5,23 @@ import 'package:blindkey_app/domain/repositories/folder_repository.dart';
 import 'package:blindkey_app/infrastructure/encryption/cryptography_service.dart';
 import 'package:blindkey_app/infrastructure/repositories/file_repository_impl.dart';
 import 'package:blindkey_app/infrastructure/repositories/metadata_repository.dart';
+import 'package:blindkey_app/infrastructure/auth/app_lock_service.dart';
 import 'package:blindkey_app/infrastructure/storage/file_storage_service.dart';
+import 'package:blindkey_app/infrastructure/storage/secure_storage_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'providers.g.dart';
+
+@riverpod
+SecureStorageService secureStorageService(SecureStorageServiceRef ref) {
+  return SecureStorageService();
+}
+
+@riverpod
+AppLockService appLockService(AppLockServiceRef ref) {
+  final storage = ref.watch(secureStorageServiceProvider);
+  return AppLockService(storage);
+}
 
 @riverpod
 FolderRepository folderRepository(FolderRepositoryRef ref) {

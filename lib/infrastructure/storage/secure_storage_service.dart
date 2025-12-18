@@ -5,6 +5,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class SecureStorageService {
   final _storage = const FlutterSecureStorage();
 
+  static const String keyAppLockEnabled = 'app_lock_enabled';
+  static const String keyAppLockPin = 'app_lock_pin';
+
   Future<Either<Failure, Unit>> write(String key, String value) async {
     try {
       await _storage.write(key: key, value: value);

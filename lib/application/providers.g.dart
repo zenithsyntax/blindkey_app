@@ -6,6 +6,42 @@ part of 'providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$secureStorageServiceHash() =>
+    r'28ef5a96de61720fa06a7ba59ceb572a1791b078';
+
+/// See also [secureStorageService].
+@ProviderFor(secureStorageService)
+final secureStorageServiceProvider =
+    AutoDisposeProvider<SecureStorageService>.internal(
+      secureStorageService,
+      name: r'secureStorageServiceProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$secureStorageServiceHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SecureStorageServiceRef = AutoDisposeProviderRef<SecureStorageService>;
+String _$appLockServiceHash() => r'2ca7288d57607d6b2f1f9db2e4e2295b5d1e336e';
+
+/// See also [appLockService].
+@ProviderFor(appLockService)
+final appLockServiceProvider = AutoDisposeProvider<AppLockService>.internal(
+  appLockService,
+  name: r'appLockServiceProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$appLockServiceHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AppLockServiceRef = AutoDisposeProviderRef<AppLockService>;
 String _$folderRepositoryHash() => r'27e93d70dbdec4acabb4edcb9fa3d0b7e56a0763';
 
 /// See also [folderRepository].
