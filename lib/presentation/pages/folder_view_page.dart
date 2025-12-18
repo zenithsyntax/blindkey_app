@@ -387,12 +387,14 @@ class _ShareDialog extends HookWidget {
                 ),
                 child: ListTile(
                   title: Text(
-                    expiry.value == null ? "No Expiry Date" : "Expires: ${expiry.value.toString().split(' ')[0]}",
+                    expiry.value == null 
+                        ? "No Expiry Date" 
+                        : "Expires: ${expiry.value!.year}-${expiry.value!.month.toString().padLeft(2,'0')}-${expiry.value!.day.toString().padLeft(2,'0')} ${expiry.value!.hour.toString().padLeft(2,'0')}:${expiry.value!.minute.toString().padLeft(2,'0')}",
                     style: GoogleFonts.inter(color: Colors.white70),
                   ),
                   trailing: const Icon(Icons.calendar_today_rounded, color: Colors.white30, size: 20),
                   onTap: () async {
-                    final picked = await showDatePicker(
+                    final pickedDate = await showDatePicker(
                       context: context,
                       initialDate: DateTime.now().add(const Duration(days: 1)),
                       firstDate: DateTime.now(),
@@ -412,7 +414,46 @@ class _ShareDialog extends HookWidget {
                         );
                       }
                     );
-                    if (picked != null) expiry.value = picked;
+                    
+                    if (pickedDate != null && context.mounted) {
+                       final pickedTime = await showTimePicker(
+                         context: context,
+                         initialTime: const TimeOfDay(hour: 0, minute: 0),
+                         builder: (context, child) {
+                            return Theme(
+                              data: ThemeData.dark().copyWith(
+                                colorScheme: const ColorScheme.dark(
+                                  primary: Color(0xFFEF5350),
+                                  onPrimary: Colors.white,
+                                  surface: Color(0xFF1A1A1A),
+                                  onSurface: Colors.white,
+                                ),
+                                timePickerTheme: TimePickerThemeData(
+                                  backgroundColor: const Color(0xFF1A1A1A),
+                                  hourMinuteTextColor: Colors.white,
+                                  dialHandColor: const Color(0xFFEF5350),
+                                  dialBackgroundColor: Colors.white10,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                         }
+                       );
+                       
+                       if (pickedTime != null) {
+                         expiry.value = DateTime(
+                           pickedDate.year, 
+                           pickedDate.month, 
+                           pickedDate.day, 
+                           pickedTime.hour, 
+                           pickedTime.minute
+                         );
+                       } else {
+                         // Default to end of day if no time picked? Or just date?
+                         // Let's force user to pick time or keep just date at 00:00
+                         expiry.value = pickedDate; 
+                       }
+                    }
                   },
                 ),
               ),
@@ -440,7 +481,7 @@ class _ShareDialog extends HookWidget {
                     child: ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        onExport(expiry.value, allowSave.value);
+                        onExport(expiry.value?.toUtc(), allowSave.value);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
@@ -549,6 +590,8 @@ class _FileThumbnail extends HookConsumerWidget {
       };
     }, [file.id]); // Re-run if file ID changes
 
+    final isExpired = file.expiryDate != null && DateTime.now().toUtc().isAfter(file.expiryDate!.toUtc());
+
     return Hero(
       tag: file.id,
       child: Material(
@@ -569,6 +612,16 @@ class _FileThumbnail extends HookConsumerWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () {
+              if (isExpired) {
+                 ScaffoldMessenger.of(context).showSnackBar(
+                   SnackBar(
+                     content: Text("This file expired on ${file.expiryDate!.toLocal().toString().split('.')[0]}", style: GoogleFonts.inter()),
+                     backgroundColor: Colors.red.shade900,
+                     behavior: SnackBarBehavior.floating,
+                   )
+                 );
+                 return;
+              }
               Navigator.push(
                 context,
                 PageRouteBuilder(
@@ -609,17 +662,46 @@ class _FileThumbnail extends HookConsumerWidget {
                     ),
                     padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
                     child: Text(
-                      metadataState.value?.fileName ?? '...',
+                      isExpired ? 'Expired' : (metadataState.value?.fileName ?? '...'),
                       style: GoogleFonts.inter(
                         fontSize: 11,
-                        color: Colors.white.withOpacity(0.9),
+                        color: isExpired ? Colors.redAccent : Colors.white.withOpacity(0.9),
                         fontWeight: FontWeight.w500,
+                        decoration: isExpired ? TextDecoration.lineThrough : null,
                       ),
                       textAlign: TextAlign.center,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                )
+                ),
+                
+                // Expired Overlay
+                if (isExpired)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withOpacity(0.7),
+                      child: Center(
+                        child: Transform.rotate(
+                          angle: -0.2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.redAccent.withOpacity(0.5), width: 2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'EXPIRED',
+                              style: GoogleFonts.blackOpsOne(
+                                color: Colors.redAccent,
+                                fontSize: 16,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -518,7 +518,7 @@ class VaultService {
           if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
             final expiryIso = map['expiryDate'] as String;
             final expiryDate = DateTime.tryParse(expiryIso);
-            if (expiryDate != null && DateTime.now().isAfter(expiryDate)) {
+            if (expiryDate != null && DateTime.now().toUtc().isAfter(expiryDate.toUtc())) {
                // Vault is expired
                return left(const Failure.fileExpired());
             }
@@ -553,7 +553,7 @@ class VaultService {
           
           for (final meta in filesList) {
              // Check Expiry (File Level)
-             if (meta.expiryDate != null && DateTime.now().isAfter(meta.expiryDate!)) {
+              if (meta.expiryDate != null && DateTime.now().toUtc().isAfter(meta.expiryDate!.toUtc())) {
                continue; // process next
              }
              

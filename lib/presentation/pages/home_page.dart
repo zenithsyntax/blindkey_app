@@ -287,15 +287,7 @@ class HomePage extends HookConsumerWidget {
                 height: 1.5,
               ),
             ),
-            const SizedBox(height: 48),
-            _buildGlassButton(
-              onPressed: () => _showCreateFolderDialog(context),
-              icon: Icons.add,
-              label: 'Create New Vault',
-              isPrimary: true,
-              isTablet: isTablet,
-              isLargeScreen: isLargeScreen,
-            ),
+           
           ],
         ),
       ),

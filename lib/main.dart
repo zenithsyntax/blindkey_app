@@ -22,16 +22,8 @@ class BlindKeyApp extends HookConsumerWidget {
        return null;
     }, []);
 
-    // Listen to lifecycle
-    useOnAppLifecycleStateChange((previous, current) {
-      if (current == AppLifecycleState.paused) {
-         // App is backgrounded
-         // We should lock if enabled.
-         // Calling lockApp() on notifier.
-         // It's safe to read notifier here? Yes.
-         ref.read(appLockNotifierProvider.notifier).lockApp();
-      }
-    });
+    // Lifecycle listener removed to prevent locking on app switch.
+    // App will only lock on cold start via initialize().
 
     final isLocked = ref.watch(appLockNotifierProvider);
 
