@@ -18,6 +18,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart'; // Added Google Fonts
+import 'package:path_provider/path_provider.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -728,6 +729,174 @@ class _FileThumbnail extends HookConsumerWidget {
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
+            onLongPress: () {
+              if (isExpired)
+                return; // Expired files handle tap only (to delete/notify)
+
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF1E1E1E),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (context) => SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Handle Bar
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.white10,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            margin: const EdgeInsets.only(bottom: 24),
+                          ),
+                        ),
+                        // File Name Title
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            metadataState.value?.fileName ?? "File Options",
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Save Option
+                        if (allowSave)
+                          ListTile(
+                            leading: const Icon(
+                              Icons.download_rounded,
+                              color: Colors.white70,
+                            ),
+                            title: Text(
+                              'Save to Device',
+                              style: GoogleFonts.inter(color: Colors.white),
+                            ),
+                            subtitle: Text(
+                              'Decrypt and save to downloads',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: Colors.white38,
+                              ),
+                            ),
+                            onTap: () async {
+                              Navigator.pop(context);
+                              final vault = ref.read(vaultServiceProvider);
+                              await _saveFileToDownloads(
+                                context,
+                                file,
+                                folderKey,
+                                vault,
+                              );
+                            },
+                          ),
+
+                        // Delete Option
+                        ListTile(
+                          leading: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.redAccent,
+                          ),
+                          title: Text(
+                            'Delete File',
+                            style: GoogleFonts.inter(color: Colors.redAccent),
+                          ),
+                          subtitle: Text(
+                            'Permanently remove from vault',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.white38,
+                            ),
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                backgroundColor: const Color(0xFF1A1A1A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                title: Text(
+                                  "Delete File?",
+                                  style: GoogleFonts.inter(color: Colors.white),
+                                ),
+                                content: Text(
+                                  "This file will be permanently deleted and cannot be recovered.",
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Text(
+                                      "Cancel",
+                                      style: GoogleFonts.inter(
+                                        color: Colors.white54,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      final repo = ref.read(
+                                        fileRepositoryProvider,
+                                      );
+                                      await repo.deleteFile(file.id);
+                                      ref.invalidate(
+                                        fileNotifierProvider(file.folderId),
+                                      );
+                                      ref.invalidate(
+                                        folderStatsProvider(file.folderId),
+                                      );
+
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              "File deleted",
+                                              style: GoogleFonts.inter(),
+                                            ),
+                                            backgroundColor:
+                                                Colors.red.shade900,
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: Text(
+                                      "Delete",
+                                      style: GoogleFonts.inter(
+                                        color: Colors.redAccent,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
             onTap: () async {
               if (isExpired) {
                 // Delete expired file when user tries to access it
@@ -966,6 +1135,252 @@ class _FileThumbnail extends HookConsumerWidget {
       );
     }
   }
+
+  Future<void> _saveFileToDownloads(
+    BuildContext context,
+    FileModel file,
+    SecretKey folderKey,
+    VaultService vault,
+  ) async {
+    try {
+      // Show loading indicator for Metadata decryption
+      // We can use a small snackbar or just await, as it is fast.
+      // Keeping original behavior but removing the long-duration snackbar that was there for the whole process.
+      
+      // Decrypt metadata to get filename
+      final metaRes = await vault.decryptMetadata(
+        file: file,
+        folderKey: folderKey,
+      );
+
+      final meta = metaRes.getOrElse(
+        () => throw Exception("Failed to decrypt metadata"),
+      );
+
+      // Check storage permission on Android
+      Directory? downloadDir;
+      if (Platform.isAndroid) {
+        bool hasPermission = false;
+
+        // check manageExternalStorage first (Android 11+)
+        final manageStatus = await Permission.manageExternalStorage.status;
+        if (!manageStatus.isRestricted) {
+          // If it's valid for this platform (Android 11+), use it
+          if (manageStatus.isGranted) {
+            hasPermission = true;
+          } else {
+            // Show rationale if needed or just request
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Full storage access required to save files",
+                    style: GoogleFonts.inter(),
+                  ),
+                  backgroundColor: Colors.orange.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            final newStatus = await Permission.manageExternalStorage.request();
+            hasPermission = newStatus.isGranted;
+          }
+        } 
+        
+        // Fallback or specific check for older Android versions (Android < 11)
+        if (!hasPermission && manageStatus.isRestricted) {
+           var storageStatus = await Permission.storage.status;
+           if (storageStatus.isGranted) {
+             hasPermission = true;
+           } else {
+             if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      "Storage permission required to save files",
+                      style: GoogleFonts.inter(),
+                    ),
+                    backgroundColor: Colors.orange.shade800,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+             }
+             final newStatus = await Permission.storage.request();
+             hasPermission = newStatus.isGranted;
+           }
+        }
+
+        if (!hasPermission) {
+          if (context.mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Storage permission denied. Cannot save file.",
+                    style: GoogleFonts.inter(),
+                  ),
+                  backgroundColor: Colors.red.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  action: SnackBarAction(
+                    label: "Settings",
+                    textColor: Colors.white,
+                    onPressed: () => openAppSettings(),
+                  ),
+                ),
+             );
+          }
+          return;
+        }
+
+        // Try multiple common Downloads paths
+        final possiblePaths = [
+          '/storage/emulated/0/Download',
+          '/storage/emulated/0/Downloads',
+          '/sdcard/Download',
+          '/sdcard/Downloads',
+        ];
+
+        // Also try using path_provider
+        try {
+          final externalDir = await getExternalStorageDirectory();
+          if (externalDir != null) {
+            // Navigate to Downloads from external storage directory
+            final parentDir = externalDir.parent.parent.parent.parent; // usually /storage/emulated/0/Android/data/pkg -> /storage/emulated/0
+            final downloadsPath = '${parentDir.path}/Download';
+            possiblePaths.insert(0, downloadsPath);
+          }
+        } catch (e) {
+          // path_provider failed, continue with hardcoded paths
+        }
+
+        // Try each path until we find one that exists
+        for (final dirPath in possiblePaths) {
+          final dir = Directory(dirPath);
+          if (await dir.exists()) {
+            downloadDir = dir;
+            break;
+          }
+        }
+
+        // If no Downloads directory found, try to create it
+        if (downloadDir == null && possiblePaths.isNotEmpty) {
+          try {
+            downloadDir = Directory(possiblePaths[0]);
+            await downloadDir.create(recursive: true);
+          } catch (e) {
+            downloadDir = null;
+          }
+        } // End Android handling
+      } else if (Platform.isIOS) {
+        // For iOS, use the app's documents directory
+        final appDocDir = await getApplicationDocumentsDirectory();
+        downloadDir = appDocDir;
+      }
+
+      if (downloadDir == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Could not access Downloads folder",
+                style: GoogleFonts.inter(),
+              ),
+              backgroundColor: Colors.red.shade800,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 1. Resolve 'BlindKey' subfolder in Downloads
+      Directory? finalDir;
+      if (downloadDir != null) {
+        final blindKeyDir = Directory("${downloadDir.path}${Platform.pathSeparator}BlindKey");
+         if (!await blindKeyDir.exists()) {
+          try {
+             await blindKeyDir.create(recursive: true);
+             finalDir = blindKeyDir;
+          } catch(e) {
+             // If creation fails, fallback to root Downloads
+             finalDir = downloadDir; 
+          }
+        } else {
+             finalDir = blindKeyDir;
+        }
+      } else {
+        return;
+      }
+
+      // Get filename from metadata
+      final filename = meta.fileName;
+      // Use finalDir
+      final targetPath =
+          "${finalDir.path}${Platform.pathSeparator}$filename";
+      final targetFile = File(targetPath);
+
+      // Handle file name conflicts
+      String finalPath = targetPath;
+      if (await targetFile.exists()) {
+        final nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
+        final ext = filename.substring(filename.lastIndexOf('.'));
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final newFilename = '$nameWithoutExt$timestamp$ext';
+        finalPath = "${finalDir.path}${Platform.pathSeparator}$newFilename";
+      }
+
+      // Open Progress Dialog to handle the actual download
+      if (context.mounted) {
+        final success = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => _DownloadProgressDialog(
+             file: file, 
+             fileName: meta.fileName,
+             folderKey: folderKey, 
+             savePath: finalPath,
+             totalSize: meta.size,
+          ),
+        );
+
+        if (success == true) {
+             ScaffoldMessenger.of(context).clearSnackBars();
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(
+                 content: Text(
+                   "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/${finalPath.split(Platform.pathSeparator).last}",
+                   style: GoogleFonts.inter(),
+                 ),
+                 backgroundColor: Colors.green.shade800,
+                 behavior: SnackBarBehavior.floating,
+                 shape: RoundedRectangleBorder(
+                   borderRadius: BorderRadius.circular(10),
+                 ),
+               ),
+             );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Save failed: ${e.toString()}",
+              style: GoogleFonts.inter(),
+            ),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
 }
 
 class _ExportProgressDialog extends HookConsumerWidget {
@@ -1153,48 +1568,435 @@ class _ExportProgressDialog extends HookConsumerWidget {
   Future<void> _saveToDownloads(BuildContext context, String path) async {
     try {
       Directory? downloadDir;
-      if (Platform.isAndroid) {
-        downloadDir = Directory('/storage/emulated/0/Download');
-        if (!await downloadDir.exists()) downloadDir = null;
 
-        var status = await Permission.storage.status;
-        if (!status.isGranted) await Permission.storage.request();
+      if (Platform.isAndroid) {
+        bool hasPermission = false;
+
+        // check manageExternalStorage first (Android 11+)
+        final manageStatus = await Permission.manageExternalStorage.status;
+        if (!manageStatus.isRestricted) {
+          // If it's valid for this platform (Android 11+), use it
+          if (manageStatus.isGranted) {
+            hasPermission = true;
+          } else {
+            // Show rationale if needed or just request
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Full storage access required to save .blindkey file",
+                    style: GoogleFonts.inter(),
+                  ),
+                  backgroundColor: Colors.orange.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            final newStatus = await Permission.manageExternalStorage.request();
+            hasPermission = newStatus.isGranted;
+          }
+        } 
+        
+        // Fallback for Android < 11
+        if (!hasPermission && manageStatus.isRestricted) {
+           var storageStatus = await Permission.storage.status;
+           if (storageStatus.isGranted) {
+             hasPermission = true;
+           } else {
+             if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      "Storage permission required to save files",
+                      style: GoogleFonts.inter(),
+                    ),
+                    backgroundColor: Colors.orange.shade800,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+             }
+             final newStatus = await Permission.storage.request();
+             hasPermission = newStatus.isGranted;
+           }
+        }
+
+        if (!hasPermission) {
+          if (context.mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Storage permission denied. Cannot save file.",
+                    style: GoogleFonts.inter(),
+                  ),
+                  backgroundColor: Colors.red.shade800,
+                  behavior: SnackBarBehavior.floating,
+                  action: SnackBarAction(
+                    label: "Settings",
+                    textColor: Colors.white,
+                    onPressed: () => openAppSettings(),
+                  ),
+                ),
+             );
+          }
+          return;
+        }
+
+        // Try multiple common Downloads paths
+        final possiblePaths = [
+          '/storage/emulated/0/Download',
+          '/storage/emulated/0/Downloads',
+          '/sdcard/Download',
+          '/sdcard/Downloads',
+        ];
+
+        // Also try using path_provider
+        try {
+          final externalDir = await getExternalStorageDirectory();
+          if (externalDir != null) {
+            // Navigate to Downloads from external storage directory
+            final parentDir = externalDir.parent.parent.parent.parent;
+            final downloadsPath = '${parentDir.path}/Download';
+            possiblePaths.insert(0, downloadsPath);
+          }
+        } catch (e) {
+          // path_provider failed, continue with hardcoded paths
+        }
+
+        // Try each path until we find one that exists
+        for (final dirPath in possiblePaths) {
+          final dir = Directory(dirPath);
+          if (await dir.exists()) {
+            downloadDir = dir;
+            break;
+          }
+        }
+
+        // If no Downloads directory found, try to create it in the first possible location
+        if (downloadDir == null && possiblePaths.isNotEmpty) {
+          try {
+            downloadDir = Directory(possiblePaths[0]);
+            await downloadDir.create(recursive: true);
+          } catch (e) {
+            // Failed to create directory
+            downloadDir = null;
+          }
+        }
+      } else if (Platform.isIOS) {
+        // For iOS, use the app's documents directory (iOS doesn't have a public Downloads folder)
+        final appDocDir = await getApplicationDocumentsDirectory();
+        downloadDir = appDocDir;
       }
 
-      if (downloadDir != null) {
-        final filename = path.split(Platform.pathSeparator).last;
-        final newPath = "${downloadDir.path}/$filename";
+      if (downloadDir == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Could not access Downloads folder",
+                style: GoogleFonts.inter(),
+              ),
+              backgroundColor: Colors.red.shade800,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
 
-        await File(path).copy(newPath);
+      // 1. Resolve 'BlindKey' subfolder in Downloads
+      Directory? finalDir;
+      if (downloadDir != null) {
+        final blindKeyDir = Directory("${downloadDir.path}${Platform.pathSeparator}BlindKey");
+         if (!await blindKeyDir.exists()) {
+          try {
+             await blindKeyDir.create(recursive: true);
+             finalDir = blindKeyDir;
+          } catch(e) {
+             // If creation fails, fallback to root Downloads
+             finalDir = downloadDir; 
+          }
+        } else {
+             finalDir = blindKeyDir;
+        }
+      } else {
+        // Should have returned early if null, but just in case
+        return;
+      }
+
+      final sourceFile = File(path);
+      if (!await sourceFile.exists()) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Source file not found",
+                style: GoogleFonts.inter(),
+              ),
+              backgroundColor: Colors.red.shade800,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      final sourceSize = await sourceFile.length();
+      final filename = path.split(Platform.pathSeparator).last;
+      
+      // Use finalDir instead of downloadDir
+      final newPath = "${finalDir.path}${Platform.pathSeparator}$filename";
+      final targetFile = File(newPath);
+
+      // Check if file already exists and handle it
+      if (await targetFile.exists()) {
+        // Option 1: Overwrite
+        // Option 2: Add timestamp to filename
+        final nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
+        final ext = filename.substring(filename.lastIndexOf('.'));
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final newFilename = '$nameWithoutExt$timestamp$ext';
+        final altPath =
+            "${finalDir.path}${Platform.pathSeparator}$newFilename";
+        final altFile = File(altPath);
+
+        // Copy to alternate path
+        await sourceFile.copy(altPath);
+
+        // Verify the file was actually copied
+        if (!await altFile.exists()) {
+          throw Exception("File copy verification failed");
+        }
+
+        // Verify file size matches
+        final targetSize = await altFile.length();
+        if (targetSize != sourceSize) {
+          throw Exception("File size mismatch after copy");
+        }
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                "Saved to Downloads/$filename",
+                "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/$newFilename",
                 style: GoogleFonts.inter(),
               ),
               backgroundColor: Colors.green.shade800,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
         }
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Could not find Downloads folder")),
-          );
-        }
+        return;
+      }
+
+      // Copy the file
+      await sourceFile.copy(newPath);
+
+      // Verify the file was actually copied
+      if (!await targetFile.exists()) {
+        throw Exception("File copy verification failed - file does not exist");
+      }
+
+      // Verify file size matches
+      final targetSize = await targetFile.length();
+      if (targetSize != sourceSize) {
+        throw Exception(
+          "File size mismatch after copy (expected: $sourceSize, got: $targetSize)",
+        );
+      }
+
+      // Only show success if file was actually saved and verified
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/$filename",
+              style: GoogleFonts.inter(),
+            ),
+            backgroundColor: Colors.green.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Save failed: $e"),
-            backgroundColor: Colors.red,
+            content: Text(
+              "Save failed: ${e.toString()}",
+              style: GoogleFonts.inter(),
+            ),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
     }
+  }
+}
+
+class _DownloadProgressDialog extends HookConsumerWidget {
+  final FileModel file;
+  final String fileName;
+  final SecretKey folderKey;
+  final String savePath;
+  final int totalSize;
+
+  const _DownloadProgressDialog({
+    required this.file,
+    required this.fileName,
+    required this.folderKey,
+    required this.savePath,
+    required this.totalSize,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progress = useState(0.0);
+    final error = useState<String?>(null);
+    final isDone = useState(false);
+
+    useEffect(() {
+      bool mounted = true;
+      Future<void> startDownload() async {
+        try {
+          final vault = ref.read(vaultServiceProvider);
+          final stream = vault.decryptFileStream(
+              file: file, folderKey: folderKey);
+          
+          final sink = File(savePath).openWrite();
+          int received = 0;
+
+          try {
+            await for (final chunk in stream) {
+              if (!mounted) {
+                 await sink.close();
+                 return; // Cancelled
+              }
+              sink.add(chunk);
+              received += chunk.length;
+              if (totalSize > 0) {
+                progress.value = received / totalSize;
+              }
+            }
+            await sink.flush();
+          } finally {
+            await sink.close();
+          }
+          
+          if (!mounted) return;
+          
+          isDone.value = true;
+          // Verify
+          final savedFile = File(savePath);
+          if (!await savedFile.exists() || await savedFile.length() != totalSize) {
+             throw Exception("File verification failed (size mismatch or missing)");
+          }
+
+          if (context.mounted) {
+             Navigator.pop(context, true); // Return true for success
+          }
+        } catch (e) {
+          if (mounted) error.value = e.toString();
+        }
+      }
+
+      startDownload();
+      return () {
+        mounted = false;
+      };
+    }, []);
+
+    return PopScope(
+      canPop: false, // Prevent dismissal while downloading
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withOpacity(0.08)),
+          ),
+          title: Text(
+            isDone.value ? "Download Complete" : "Downloading...",
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (error.value != null) ...[
+                  Center(
+                    child: Icon(
+                      Icons.error_outline_rounded,
+                      color: Colors.red.shade400,
+                      size: 48,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Error: ${error.value}",
+                    style: GoogleFonts.inter(color: Colors.red.shade200),
+                  ),
+                ] else ...[
+                  Text(
+                    "Decrypting $fileName...",
+                    style: GoogleFonts.inter(color: Colors.white70),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: totalSize > 0 ? progress.value : null,
+                      backgroundColor: Colors.white10,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Colors.blueAccent,
+                      ),
+                      minHeight: 8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      totalSize > 0 ? "${(progress.value * 100).toInt()}%" : "...",
+                      style: GoogleFonts.robotoMono(
+                        fontSize: 12,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: error.value != null
+              ? [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text("Close", style: GoogleFonts.inter(color: Colors.white70)),
+                  )
+                ]
+              : null,
+        ),
+      ),
+    );
   }
 }
