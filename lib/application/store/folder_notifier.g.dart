@@ -6,7 +6,7 @@ part of 'folder_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$folderNotifierHash() => r'd523aee6f72662f8ff32b02b49259167fc5ae041';
+String _$folderNotifierHash() => r'3aa6c9a1db097a9bd2e491e93b4dbf4f0ca80cd8';
 
 /// See also [FolderNotifier].
 @ProviderFor(FolderNotifier)

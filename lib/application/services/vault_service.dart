@@ -16,6 +16,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+import 'package:blindkey_app/application/services/trusted_time_service.dart';
 
 abstract class ExportStatus {}
 
@@ -40,12 +41,14 @@ class VaultService {
   final FileRepository _fileRepository;
   final CryptographyService _cryptoService;
   final FileStorageService _storageService;
+  final TrustedTimeService _trustedTimeService;
 
   VaultService(
     this._folderRepository,
     this._fileRepository,
     this._cryptoService,
     this._storageService,
+    this._trustedTimeService,
   );
 
   Future<Either<Failure, Unit>> createFolder(
@@ -238,6 +241,7 @@ class VaultService {
   Stream<List<int>> decryptFileStream({
     required FileModel file,
     required SecretKey folderKey,
+    DateTime? trustedNow,
   }) async* {
     // 1. Decrypt Metadata to get File Key and File Path
     final encMetadataBytes = base64Decode(file.encryptedMetadata);
@@ -252,11 +256,22 @@ class VaultService {
     final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
 
     // Check Expiry
-    if (metadata.expiryDate != null &&
-        DateTime.now().isAfter(metadata.expiryDate!)) {
-      // Delete file immediately
-      await _fileRepository.deleteFile(file.id);
-      throw Exception("File has expired and has been deleted.");
+    if (metadata.expiryDate != null) {
+       DateTime now;
+       if (trustedNow != null) {
+         now = trustedNow;
+       } else {
+         try {
+           now = await _trustedTimeService.getTrustedTime();
+         } catch (e) {
+           throw Exception("Internet connection is required to verify this shared file.");
+         }
+       }
+       
+       if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
+          await _fileRepository.deleteFile(file.id);
+          throw Exception("File has expired and has been deleted.");
+       }
     }
 
     // 2. Get File Key (DEK)
@@ -327,6 +342,7 @@ class VaultService {
     required SecretKey folderKey,
     required int start,
     int? end,
+    DateTime? trustedNow,
   }) async* {
     // 1. Decrypt Metadata
     final encMetadataBytes = base64Decode(file.encryptedMetadata);
@@ -340,10 +356,21 @@ class VaultService {
     final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
 
     // Check Expiry
-    if (metadata.expiryDate != null &&
-        DateTime.now().isAfter(metadata.expiryDate!)) {
-      await _fileRepository.deleteFile(file.id);
-      throw Exception("File has expired.");
+    if (metadata.expiryDate != null) {
+       DateTime now;
+       if (trustedNow != null) {
+         now = trustedNow;
+       } else {
+         try {
+           now = await _trustedTimeService.getTrustedTime();
+         } catch (e) {
+           throw Exception("Internet connection is required.");
+         }
+       }
+       if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
+         await _fileRepository.deleteFile(file.id);
+         throw Exception("File has expired.");
+       }
     }
 
     // 2. Setup
@@ -429,6 +456,24 @@ class VaultService {
 
       yield ExportProgress(0.05, "Preparing files...");
 
+      // Get Trusted Time for Manifest 'createdAt'
+      DateTime trustedNow;
+      try {
+        if (expiry != null) {
+           trustedNow = await _trustedTimeService.getTrustedTime();
+        } else {
+           // Try get trusted time, fallback to device time if offline allowed (no expiry)
+           try {
+             trustedNow = await _trustedTimeService.getTrustedTime();
+           } catch (_) {
+             trustedNow = DateTime.now();
+           }
+        }
+      } catch (e) {
+         yield ExportFailure("Internet connection is required to create a secure expiry timestamp.");
+         return;
+      }
+
       // 2. Prepare Metadata for Isolate
       // We need to decrypt metadata here to check validity and prepare export items
       final exportItems = <_IsolateExportItem>[];
@@ -447,11 +492,12 @@ class VaultService {
           final originalMeta = FileMetadata.fromJson(jsonDecode(metaJson));
 
           // Check for expiry BEFORE exporting
-          if (originalMeta.expiryDate != null &&
-              DateTime.now().isAfter(originalMeta.expiryDate!)) {
-            // File is expired. Delete it and skip.
-            await _fileRepository.deleteFile(file.id);
-            continue;
+          if (originalMeta.expiryDate != null) {
+              if (trustedNow.isAfter(originalMeta.expiryDate!)) {
+                // File is expired. Delete it and skip.
+                await _fileRepository.deleteFile(file.id);
+                continue;
+              }
           }
 
           exportItems.add(
@@ -482,6 +528,7 @@ class VaultService {
           exportItems: exportItems,
           expiry: expiry,
           allowSave: allowSave,
+          trustedCreatedAt: trustedNow.toIso8601String(),
         ),
       );
 
@@ -507,6 +554,15 @@ class VaultService {
       final file = File(path);
       if (!await file.exists())
         return left(const Failure.fileSystemError("File not found"));
+
+      // 1. Mandatory Internet Check for Import
+      // We must verify untampered time before trusting any expiry in the file.
+      DateTime trustedNow;
+      try {
+        trustedNow = await _trustedTimeService.getTrustedTime();
+      } catch (e) {
+        return left(const Failure.unexpected("Internet connection is required for security verification."));
+      }
 
       final bytes = await file.readAsBytes();
       if (bytes.length < 16)
@@ -548,8 +604,10 @@ class VaultService {
           if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
             final expiryIso = map['expiryDate'] as String;
             final expiryDate = DateTime.tryParse(expiryIso);
+            
+            // Validate using TRUSTED TIME
             if (expiryDate != null &&
-                DateTime.now().toUtc().isAfter(expiryDate.toUtc())) {
+                trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
               // Vault is expired
               return left(const Failure.fileExpired());
             }
@@ -572,7 +630,7 @@ class VaultService {
             name: map['name'] + " (Imported)",
             salt: base64Encode(salt),
             verificationHash: map['verificationHash'],
-            createdAt: DateTime.now(),
+            createdAt: trustedNow, // Use trusted now for creation time too? Or keep local. Local is fine for creation.
             allowSave: map['allowSave'] ?? true,
           );
 
@@ -586,8 +644,12 @@ class VaultService {
           final vaultPath = vaultPathRes.getOrElse(() => '');
 
           for (final meta in filesList) {
-            // Import all files, including expired ones
-            // Expired files will be shown with an indicator and deleted when accessed
+            // Check file-specific expiry as well if present
+             if (meta.expiryDate != null &&
+                trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
+               // Skip expired file
+               continue;
+            }
 
             final zipFile = archive.findFile(
               meta.encryptedFilePath,
@@ -628,6 +690,10 @@ class VaultService {
         },
       );
     } catch (e) {
+      // Return network error if that was the cause, otherwise unexpected
+      if (e.toString().contains("Internet")) {
+         return left(const Failure.unexpected("Internet connection is required for security verification."));
+      }
       return left(Failure.unexpected(e.toString()));
     }
   }
@@ -635,6 +701,7 @@ class VaultService {
   Future<Either<Failure, FileMetadata>> decryptMetadata({
     required FileModel file,
     required SecretKey folderKey,
+    DateTime? trustedNow,
   }) async {
     try {
       final encMetadataBytes = base64Decode(file.encryptedMetadata);
@@ -643,10 +710,30 @@ class VaultService {
         key: folderKey,
       );
 
-      return metadataResult.fold((l) => left(l), (bytes) {
+      return await metadataResult.fold((l) => left(l), (bytes) async {
         try {
           final metadataJson = utf8.decode(bytes);
           final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
+          
+          if (metadata.expiryDate != null) {
+            DateTime now;
+            if (trustedNow != null) {
+              now = trustedNow;
+            } else {
+              try {
+                now = await _trustedTimeService.getTrustedTime();
+              } catch (e) {
+                 return left(const Failure.unexpected("Internet connection is required for security verification."));
+              }
+            }
+            
+            if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
+               // Expired
+               await _fileRepository.deleteFile(file.id);
+               return left(const Failure.fileExpired());
+            }
+          }
+
           return right(metadata);
         } catch (e) {
           return left(Failure.unexpected("Metadata JSON error: $e"));
@@ -858,6 +945,7 @@ class _IsolateExportArgs {
   final List<_IsolateExportItem> exportItems;
   final DateTime? expiry;
   final bool allowSave;
+  final String trustedCreatedAt;
 
   _IsolateExportArgs({
     required this.sendPort,
@@ -870,6 +958,7 @@ class _IsolateExportArgs {
     required this.exportItems,
     required this.expiry,
     required this.allowSave,
+    required this.trustedCreatedAt,
   });
 }
 
@@ -934,6 +1023,7 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
       'files': exportMetadataList.map((e) => e.toJson()).toList(),
       'expiryDate': args.expiry?.toIso8601String(),
       'allowSave': args.allowSave,
+      'createdAt': args.trustedCreatedAt,
     };
 
     final manifestJson = jsonEncode(manifest);

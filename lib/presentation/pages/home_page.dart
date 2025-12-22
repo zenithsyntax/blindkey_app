@@ -769,9 +769,13 @@ class HomePage extends HookConsumerWidget {
 
                                       String msg =
                                           'Import failed: Incorrect password or corrupted file';
-                                      if (e is Failure &&
-                                          e == const Failure.fileExpired()) {
-                                        msg = 'This vault file has expired';
+                                      if (e is Failure) {
+                                        e.maybeWhen(
+                                          fileExpired: () =>
+                                              msg = 'This vault file has expired',
+                                          unexpected: (m) => msg = m,
+                                          orElse: () {},
+                                        );
                                       }
 
                                       errorText.value = msg;

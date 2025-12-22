@@ -33,15 +33,47 @@ class FileViewPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 1. Preload Trusted Time if file has expiry
+    final trustedTimeFuture = useMemoized(() async {
+      if (file.expiryDate != null) {
+        // Enforce Internet Check
+        try {
+          return await ref.read(trustedTimeServiceProvider).getTrustedTime();
+        } catch (e) {
+          throw Exception("Internet connection is required to verify this shared file.");
+        }
+      }
+      return null;
+    }, [file.id]); // Keyed by ID
+
+    final trustedTimeSnapshot = useFuture(trustedTimeFuture);
+
     // Helper to get raw file details (name/mime/size)
     final fileDetailsFuture = useMemoized(() async {
+      // Wait for time check if needed
+      DateTime? trustedNow;
+      if (file.expiryDate != null) {
+         if (trustedTimeSnapshot.hasError) throw trustedTimeSnapshot.error!;
+         if (!trustedTimeSnapshot.hasData) return null; // Wait...
+         // Actually, useFuture returns null data if loading OR if future returned null.
+         // If file.expiryDate is NOT null, we expect data.
+         // If file.expiryDate IS null, data is null (correct).
+         trustedNow = trustedTimeSnapshot.data;
+      }
+
       final vault = ref.read(vaultServiceProvider);
-      final res = await vault.decryptMetadata(file: file, folderKey: folderKey);
+      final res = await vault.decryptMetadata(
+          file: file, 
+          folderKey: folderKey,
+          trustedNow: trustedNow,
+      );
 
       return res.fold((l) => throw Exception(l.toString()), (meta) {
+        // ... (legacy fix logic) ...
         // Fix for legacy files with "application/octet-stream"
         if (meta.mimeType == 'application/octet-stream') {
-          final ext = meta.fileName.split('.').last.toLowerCase();
+           // ... same logic ...
+             final ext = meta.fileName.split('.').last.toLowerCase();
           String newMime = 'application/octet-stream';
           switch (ext) {
             case 'jpg':
@@ -121,9 +153,14 @@ class FileViewPage extends HookConsumerWidget {
         }
         return meta;
       });
-    });
+    }, [file.id, trustedTimeSnapshot.data, trustedTimeSnapshot.error]); // Re-run when time is ready
 
     final fileDetails = useFuture(fileDetailsFuture);
+
+    // Loading State handling (Time check OR Decrypt)
+    if (file.expiryDate != null && trustedTimeSnapshot.connectionState == ConnectionState.waiting) {
+       // Showing loading for verification
+    }
 
     final isVideo =
         fileDetails.hasData && (fileDetails.data!.mimeType.startsWith('video'));
@@ -266,6 +303,7 @@ class FileViewPage extends HookConsumerWidget {
                                 file: file,
                                 folderKey: folderKey,
                                 fileSize: fileDetails.data!.size,
+                                trustedNow: trustedTimeSnapshot.data,
                               )
                             : (fileDetails.data!.mimeType.startsWith(
                                     'image/svg',
@@ -274,6 +312,7 @@ class FileViewPage extends HookConsumerWidget {
                                       file: file,
                                       folderKey: folderKey,
                                       fileSize: fileDetails.data!.size,
+                                      trustedNow: trustedTimeSnapshot.data,
                                     )
                                   : (fileDetails.data!.mimeType.startsWith(
                                           'image/',
@@ -282,6 +321,7 @@ class FileViewPage extends HookConsumerWidget {
                                             file: file,
                                             folderKey: folderKey,
                                             fileSize: fileDetails.data!.size,
+                                            trustedNow: trustedTimeSnapshot.data,
                                           )
                                         : (fileDetails.data!.mimeType
                                                   .startsWith('text/')
@@ -290,6 +330,7 @@ class FileViewPage extends HookConsumerWidget {
                                                   folderKey: folderKey,
                                                   fileSize:
                                                       fileDetails.data!.size,
+                                                  trustedNow: trustedTimeSnapshot.data,
                                                 )
                                               : (fileDetails.data!.mimeType ==
                                                         'application/pdf'
@@ -299,6 +340,7 @@ class FileViewPage extends HookConsumerWidget {
                                                         fileSize: fileDetails
                                                             .data!
                                                             .size,
+                                                        trustedNow: trustedTimeSnapshot.data,
                                                       )
                                                     : (fileDetails
                                                               .data!
@@ -314,6 +356,7 @@ class FileViewPage extends HookConsumerWidget {
                                                                   fileDetails
                                                                       .data!
                                                                       .size,
+                                                              trustedNow: trustedTimeSnapshot.data,
                                                             )
                                                           : _HexFileView(
                                                               file: file,
@@ -327,6 +370,7 @@ class FileViewPage extends HookConsumerWidget {
                                                                   fileDetails
                                                                       .data!
                                                                       .size,
+                                                              trustedNow: trustedTimeSnapshot.data,
                                                             )))))),
                       ),
                     ),
@@ -433,10 +477,13 @@ class _ImageView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _ImageView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -451,7 +498,7 @@ class _ImageView extends HookConsumerWidget {
       bool isCancelled = false;
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey)
+          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
           .listen(
             (chunk) {
               if (isCancelled) return;
@@ -520,10 +567,13 @@ class _VideoView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _VideoView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -543,6 +593,7 @@ class _VideoView extends HookConsumerWidget {
           final res = await vault.decryptMetadata(
             file: file,
             folderKey: folderKey,
+            trustedNow: trustedNow,
           );
           String ext = 'mp4';
           res.fold((l) {}, (meta) {
@@ -560,6 +611,7 @@ class _VideoView extends HookConsumerWidget {
           final stream = vault.decryptFileStream(
             file: file,
             folderKey: folderKey,
+            trustedNow: trustedNow,
           );
 
           await for (final chunk in stream) {
@@ -731,10 +783,13 @@ class _TextView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _TextView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -750,7 +805,7 @@ class _TextView extends HookConsumerWidget {
       final bytes = <int>[];
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey)
+          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
           .listen(
             (chunk) {
               if (isCancelled) return;
@@ -800,10 +855,13 @@ class _PdfView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _PdfView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -895,12 +953,14 @@ class _HexFileView extends HookConsumerWidget {
   final SecretKey folderKey;
   final String mimeType;
   final int fileSize;
+  final DateTime? trustedNow;
 
   const _HexFileView({
     required this.file,
     required this.folderKey,
     required this.mimeType,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -917,7 +977,7 @@ class _HexFileView extends HookConsumerWidget {
       int count = 0;
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey)
+          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
           .listen(
             (chunk) {
               if (isCancelled) return;
@@ -1051,10 +1111,13 @@ class _AudioView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _AudioView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -1225,10 +1288,13 @@ class _SvgView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
+  final DateTime? trustedNow;
+
   const _SvgView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
+    this.trustedNow,
   });
 
   @override
@@ -1244,7 +1310,7 @@ class _SvgView extends HookConsumerWidget {
       final bytes = <int>[];
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey)
+          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
           .listen(
             (chunk) {
               if (isCancelled) return;

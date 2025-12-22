@@ -6,7 +6,7 @@ part of 'file_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$fileNotifierHash() => r'7f9d8a1a4d9b6deed36dc7fbfcb6db2c3bfb2fda';
+String _$fileNotifierHash() => r'5335c1f78f4411fff9284a996a7ae8e8dfcb7ed8';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -161,7 +161,7 @@ class _FileNotifierProviderElement
   String get folderId => (origin as FileNotifierProvider).folderId;
 }
 
-String _$uploadProgressHash() => r'd252b59668041ecabebc639e092d58c214e85407';
+String _$uploadProgressHash() => r'f780ea410e65d3ac241c0316d89c3bbe3f9cb35f';
 
 /// See also [UploadProgress].
 @ProviderFor(UploadProgress)

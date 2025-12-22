@@ -6,6 +6,25 @@ part of 'providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$trustedTimeServiceHash() =>
+    r'dfbe7e81974cf12015f2069924ee0333f400f272';
+
+/// See also [trustedTimeService].
+@ProviderFor(trustedTimeService)
+final trustedTimeServiceProvider =
+    AutoDisposeProvider<TrustedTimeService>.internal(
+      trustedTimeService,
+      name: r'trustedTimeServiceProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$trustedTimeServiceHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef TrustedTimeServiceRef = AutoDisposeProviderRef<TrustedTimeService>;
 String _$secureStorageServiceHash() =>
     r'28ef5a96de61720fa06a7ba59ceb572a1791b078';
 
@@ -151,7 +170,7 @@ final fileRepositoryProvider = AutoDisposeProvider<FileRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FileRepositoryRef = AutoDisposeProviderRef<FileRepository>;
-String _$vaultServiceHash() => r'4e15324f183a0f6b84f970fa2d0a1c54a03b46c4';
+String _$vaultServiceHash() => r'1d3c8da911947ae46daffd6af7d6e8c18d3e55f5';
 
 /// See also [vaultService].
 @ProviderFor(vaultService)

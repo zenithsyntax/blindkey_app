@@ -1,5 +1,6 @@
 
 import 'package:blindkey_app/application/services/vault_service.dart';
+import 'package:blindkey_app/application/services/trusted_time_service.dart';
 import 'package:blindkey_app/domain/repositories/file_repository.dart';
 import 'package:blindkey_app/domain/repositories/folder_repository.dart';
 import 'package:blindkey_app/infrastructure/encryption/cryptography_service.dart';
@@ -11,6 +12,11 @@ import 'package:blindkey_app/infrastructure/storage/secure_storage_service.dart'
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'providers.g.dart';
+
+@riverpod
+TrustedTimeService trustedTimeService(TrustedTimeServiceRef ref) {
+  return TrustedTimeService();
+}
 
 @riverpod
 SecureStorageService secureStorageService(SecureStorageServiceRef ref) {
@@ -65,15 +71,13 @@ FileRepository fileRepository(FileRepositoryRef ref) {
 
 @riverpod
 VaultService vaultService(VaultServiceRef ref) {
-  final folderRepo = ref.watch(folderRepositoryProvider); // This creates NEW instance of MetadataRepository if used above default
-  // Wait, folderRepositoryProvider returns NEW MetadataRepository.
-  // If folderRepository relies on same DB instance, we should fix this.
-  // Let's make `folderRepository` use the shared one.
+  // Use shared metadata repo via other repos
   return VaultService(
-    ref.watch(folderRepositoryImplProvider), // Updated below
+    ref.watch(folderRepositoryImplProvider),
     ref.watch(fileRepositoryProvider),
     ref.watch(cryptographyServiceProvider),
     ref.watch(fileStorageServiceProvider),
+    ref.watch(trustedTimeServiceProvider),
   );
 }
 

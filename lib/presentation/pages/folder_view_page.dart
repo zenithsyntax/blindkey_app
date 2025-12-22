@@ -588,6 +588,23 @@ class _ShareDialog extends HookWidget {
                     ),
                   ),
                 ),
+              if (expiry.value != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Row(
+                    children: [
+                       Icon(Icons.wifi_lock_rounded, size: 12, color: Colors.blueAccent),
+                       const SizedBox(width: 4),
+                       Text(
+                         "Secure timestamp verification requires internet",
+                         style: GoogleFonts.inter(
+                           fontSize: 10,
+                           color: Colors.blueAccent,
+                         ),
+                       ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 32),
 
               Row(
