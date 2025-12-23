@@ -400,7 +400,6 @@ class HomePage extends HookConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(10),
@@ -408,10 +407,10 @@ class HomePage extends HookConsumerWidget {
                           color: Colors.white.withOpacity(0.05),
                         ),
                       ),
-                      child: const Icon(
-                        Icons.lock_outline_rounded,
-                        color: Color(0xFFEF5350), // Red accent
-                        size: 20,
+                      child: Image.asset(
+                        'assets/vault_icon.png',
+                        width: 57,
+                        height: 57,
                       ),
                     ),
 
