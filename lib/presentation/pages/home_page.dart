@@ -44,13 +44,12 @@ class HomePage extends HookConsumerWidget {
             ),
           ),
 
-          // Noise texture overlay (optional, simulated with opacity)
-          // For a cleaner look, we'll stick to a smooth gradient but added a very subtle top shimmer
+          // Noise texture overlay (responsive)
           Positioned(
-            top: -200,
-            left: -100,
-            right: -100,
-            height: 500,
+            top: -size.height * 0.2, // Relative to screen height
+            left: -size.width * 0.2, // Relative to screen width
+            right: -size.width * 0.2,
+            height: size.height * 0.6,
             child: Container(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -145,49 +144,47 @@ class HomePage extends HookConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(
-                    0xFFE53935,
-                  ).withOpacity(0.1), // Red accent container
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFFE53935).withOpacity(0.2),
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  child: Image.asset(
+                    'assets/blindkey_logo.png',
+                    width: isLargeScreen ? 32 : 28,
+                    height: isLargeScreen ? 32 : 28,
+                    fit: BoxFit.contain,
                   ),
                 ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  color: Color(0xFFEF5350), // Lighter professional red for icon
-                  size: 24,
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'BlindKey',
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: -0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Secure Storage',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Colors.white54,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'BlindKey',
-                    style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  Text(
-                    'Secure Storage',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: Colors.white54,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
 
           // Icons aligned to the right
@@ -345,11 +342,11 @@ class HomePage extends HookConsumerWidget {
         SliverPadding(
           padding: EdgeInsets.symmetric(horizontal: isLargeScreen ? 40 : 24),
           sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: isLargeScreen ? 3 : (isTablet ? 2 : 1),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 400,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: isLargeScreen ? 1.6 : 1.8,
+              childAspectRatio: 1.6,
             ),
             delegate: SliverChildBuilderDelegate((context, index) {
               final folder = folders[index];
