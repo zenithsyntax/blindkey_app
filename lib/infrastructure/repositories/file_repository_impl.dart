@@ -93,7 +93,11 @@ class FileRepositoryImpl implements FileRepository {
   Future<Either<Failure, Unit>> saveFileModel(FileModel file) async {
     try {
       final db = await metadataRepository.database;
-      await db.insert('files', file.toJson());
+      await db.insert(
+        'files', 
+        file.toJson(), 
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
       return right(unit);
     } catch (e) {
       return left(Failure.databaseError(e.toString()));

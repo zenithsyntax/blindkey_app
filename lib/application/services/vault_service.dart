@@ -137,7 +137,90 @@ class VaultService {
     }
   }
 
-  // File Encryption using Isolate
+  Future<Either<Failure, SecretKey>> changeFolderPassword({
+    required FolderModel folder,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    try {
+      // 1. Verify Old Password & Get Old Key
+      final oldKeyRes = await verifyPasswordAndGetKey(folder, oldPassword);
+      return oldKeyRes.fold(
+        (l) => left(l),
+        (oldKey) async {
+          // 2. Generate New Salt & New Key
+          final newSalt = await _cryptoService.generateRandomKey().then((k) => k.extractBytes());
+          final newKey = await _cryptoService.deriveKeyFromPassword(newPassword, newSalt);
+
+          // 3. Get All Files
+          final filesRes = await _fileRepository.getFiles(folder.id);
+          if (filesRes.isLeft()) {
+              return left(const Failure.unexpected("Could not access files"));
+          }
+          final files = filesRes.getOrElse(() => []);
+
+          // 4. Re-encrypt Metadata for each file
+          for (final file in files) {
+            // Decrypt with Old Key
+            final encMeta = base64Decode(file.encryptedMetadata);
+            final decRes = await _cryptoService.decryptData(
+              encryptedData: encMeta,
+              key: oldKey,
+            );
+            
+            if (decRes.isLeft()) {
+               return left(const Failure.unexpected("Failed to decrypt file metadata during migration"));
+            }
+            
+            final metaBytes = decRes.getOrElse(() => []);
+            
+            // Re-encrypt with New Key
+            final encRes = await _cryptoService.encryptData(
+               data: metaBytes,
+               key: newKey,
+            );
+            
+            if (encRes.isLeft()) {
+               return left(const Failure.unexpected("Failed to re-encrypt file metadata"));
+            }
+            
+            final newEncMeta = encRes.getOrElse(() => []);
+            
+            // Save updated file
+            final updatedFile = file.copyWith(
+               encryptedMetadata: base64Encode(newEncMeta),
+            );
+            final saveRes = await _fileRepository.saveFileModel(updatedFile);
+            if (saveRes.isLeft()) {
+               return left(const Failure.unexpected("Failed to save re-encrypted file metadata"));
+            }
+          }
+
+          // 5. Update Folder Verification
+          final verificationEnc = await _cryptoService.encryptData(
+            data: utf8.encode('VERIFY'),
+            key: newKey,
+          );
+          
+          return verificationEnc.fold(
+             (l) => left(l),
+             (encryptedBytes) async {
+               final updatedFolder = folder.copyWith(
+                 salt: base64Encode(newSalt),
+                 verificationHash: base64Encode(encryptedBytes),
+               );
+               
+               await _folderRepository.saveFolder(updatedFolder);
+               return right(newKey);
+             }
+          );
+        },
+      );
+    } catch (e) {
+      return left(Failure.unexpected(e.toString()));
+    }
+  }
+
   Stream<double> encryptAndSaveFile({
     required File originalFile,
     required String folderId,
