@@ -148,11 +148,11 @@ class HomePage extends HookConsumerWidget {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(2),
                   child: Image.asset(
                     'assets/blindkey_logo.png',
-                    width: isLargeScreen ? 32 : 28,
-                    height: isLargeScreen ? 32 : 28,
+                    width: isLargeScreen ? 56 : 50,
+                    height: isLargeScreen ? 56 : 50,
                     fit: BoxFit.contain,
                   ),
                 ),
