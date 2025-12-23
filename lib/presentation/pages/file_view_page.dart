@@ -17,7 +17,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:google_fonts/google_fonts.dart'; // Added Google Fonts
+import 'package:google_fonts/google_fonts.dart';
+import 'package:excel/excel.dart' hide Border;
 
 class FileViewPage extends HookConsumerWidget {
   final FileModel file;
@@ -40,7 +41,9 @@ class FileViewPage extends HookConsumerWidget {
         try {
           return await ref.read(trustedTimeServiceProvider).getTrustedTime();
         } catch (e) {
-          throw Exception("Internet connection is required to verify this shared file.");
+          throw Exception(
+            "Internet connection is required to verify this shared file.",
+          );
         }
       }
       return null;
@@ -53,27 +56,22 @@ class FileViewPage extends HookConsumerWidget {
       // Wait for time check if needed
       DateTime? trustedNow;
       if (file.expiryDate != null) {
-         if (trustedTimeSnapshot.hasError) throw trustedTimeSnapshot.error!;
-         if (!trustedTimeSnapshot.hasData) return null; // Wait...
-         // Actually, useFuture returns null data if loading OR if future returned null.
-         // If file.expiryDate is NOT null, we expect data.
-         // If file.expiryDate IS null, data is null (correct).
-         trustedNow = trustedTimeSnapshot.data;
+        if (trustedTimeSnapshot.hasError) throw trustedTimeSnapshot.error!;
+        if (!trustedTimeSnapshot.hasData) return null; // Wait...
+        trustedNow = trustedTimeSnapshot.data;
       }
 
       final vault = ref.read(vaultServiceProvider);
       final res = await vault.decryptMetadata(
-          file: file, 
-          folderKey: folderKey,
-          trustedNow: trustedNow,
+        file: file,
+        folderKey: folderKey,
+        trustedNow: trustedNow,
       );
 
       return res.fold((l) => throw Exception(l.toString()), (meta) {
-        // ... (legacy fix logic) ...
         // Fix for legacy files with "application/octet-stream"
         if (meta.mimeType == 'application/octet-stream') {
-           // ... same logic ...
-             final ext = meta.fileName.split('.').last.toLowerCase();
+          final ext = meta.fileName.split('.').last.toLowerCase();
           String newMime = 'application/octet-stream';
           switch (ext) {
             case 'jpg':
@@ -131,21 +129,25 @@ class FileViewPage extends HookConsumerWidget {
               break;
             case 'doc':
             case 'docx':
-              newMime = 'application/msword';
+              newMime =
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
               break;
             case 'xls':
             case 'xlsx':
-              newMime = 'application/vnd.ms-excel';
+              newMime =
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
               break;
             case 'ppt':
             case 'pptx':
-              newMime = 'application/vnd.ms-powerpoint';
+              newMime =
+                  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
               break;
             case 'mp3':
             case 'wav':
             case 'aac':
             case 'wma':
             case 'flac':
+            case 'm4a':
               newMime = 'audio/mpeg';
               break;
           }
@@ -153,13 +155,18 @@ class FileViewPage extends HookConsumerWidget {
         }
         return meta;
       });
-    }, [file.id, trustedTimeSnapshot.data, trustedTimeSnapshot.error]); // Re-run when time is ready
+    }, [
+      file.id,
+      trustedTimeSnapshot.data,
+      trustedTimeSnapshot.error,
+    ]); // Re-run when time is ready
 
     final fileDetails = useFuture(fileDetailsFuture);
 
     // Loading State handling (Time check OR Decrypt)
-    if (file.expiryDate != null && trustedTimeSnapshot.connectionState == ConnectionState.waiting) {
-       // Showing loading for verification
+    if (file.expiryDate != null &&
+        trustedTimeSnapshot.connectionState == ConnectionState.waiting) {
+      // Showing loading for verification
     }
 
     final isVideo =
@@ -200,70 +207,68 @@ class FileViewPage extends HookConsumerWidget {
         actions: [
           if (allowSave) // Only if permitted
             IconButton(
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                color: Colors.white70,
-              ),
+              icon: const Icon(Icons.open_in_new_rounded, color: Colors.white70),
               tooltip: 'Open in External App',
               onPressed: () async {
                 if (!fileDetails.hasData) return;
 
                 final confirm = await showDialog<bool>(
                   context: context,
-                  builder: (context) => BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: AlertDialog(
-                      backgroundColor: const Color(0xFF1A1A1A),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: BorderSide(color: Colors.white.withOpacity(0.08)),
-                      ),
-                      title: Text(
-                        "Leave Secure Vault?",
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      content: Text(
-                        'You are about to open this file externally.\n\n'
-                        '• Screenshot protection will be LOST.\n'
-                        '• The file will be decrypted temporarily.\n\n'
-                        'Proceed?',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: Text(
-                            'Cancel',
-                            style: GoogleFonts.inter(color: Colors.white54),
+                  builder:
+                      (context) => BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: AlertDialog(
+                          backgroundColor: const Color(0xFF1A1A1A),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: Colors.white.withOpacity(0.08),
+                            ),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: Text(
-                            'Open Externally',
+                          title: Text(
+                            "Leave Secure Vault?",
                             style: GoogleFonts.inter(
-                              color: Colors.redAccent,
+                              fontSize: 18,
+                              color: Colors.white,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                          content: Text(
+                            'You are about to open this file externally.\n\n'
+                            '• Screenshot protection will be LOST.\n'
+                            '• The file will be decrypted temporarily.\n\n'
+                            'Proceed?',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.inter(color: Colors.white54),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: Text(
+                                'Open Externally',
+                                style: GoogleFonts.inter(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
                 );
 
                 if (confirm != true) return;
 
-                // Decrypt logic kept same
-                // ...
-                _openExternally(
+                await openExternally(
                   context,
                   ref,
                   file,
@@ -281,99 +286,160 @@ class FileViewPage extends HookConsumerWidget {
 
           SafeArea(
             child: Center(
-              child: fileDetails.hasError
-                  ? Text(
-                      'Error: ${fileDetails.error}',
-                      style: GoogleFonts.inter(color: Colors.red),
-                    )
-                  : !fileDetails.hasData
-                  ? const SizedBox(
-                      width: 200,
-                      child: LinearProgressIndicator(
-                        color: Colors.white30,
-                        backgroundColor: Colors.white10,
-                      ),
-                    )
-                  : Hero(
-                      tag: file.id,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: isVideo
-                            ? _VideoView(
-                                file: file,
-                                folderKey: folderKey,
-                                fileSize: fileDetails.data!.size,
-                                trustedNow: trustedTimeSnapshot.data,
-                              )
-                            : (fileDetails.data!.mimeType.startsWith(
-                                    'image/svg',
+              child:
+                  fileDetails.hasError
+                      ? Text(
+                        'Error: ${fileDetails.error}',
+                        style: GoogleFonts.inter(color: Colors.red),
+                      )
+                      : !fileDetails.hasData
+                      ? const SizedBox(
+                        width: 200,
+                        child: LinearProgressIndicator(
+                          color: Colors.white30,
+                          backgroundColor: Colors.white10,
+                        ),
+                      )
+                      : Hero(
+                        tag: file.id,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child:
+                              isVideo
+                                  ? _VideoView(
+                                    file: file,
+                                    folderKey: folderKey,
+                                    fileSize: fileDetails.data!.size,
+                                    trustedNow: trustedTimeSnapshot.data,
                                   )
-                                  ? _SvgView(
-                                      file: file,
-                                      folderKey: folderKey,
-                                      fileSize: fileDetails.data!.size,
-                                      trustedNow: trustedTimeSnapshot.data,
-                                    )
                                   : (fileDetails.data!.mimeType.startsWith(
-                                          'image/',
-                                        )
-                                        ? _ImageView(
+                                        'image/svg',
+                                      )
+                                      ? _SvgView(
+                                        file: file,
+                                        folderKey: folderKey,
+                                        fileSize: fileDetails.data!.size,
+                                        trustedNow: trustedTimeSnapshot.data,
+                                      )
+                                      : (fileDetails.data!.mimeType.startsWith(
+                                        'image/',
+                                      )
+                                          ? _ImageView(
                                             file: file,
                                             folderKey: folderKey,
                                             fileSize: fileDetails.data!.size,
-                                            trustedNow: trustedTimeSnapshot.data,
+                                            trustedNow:
+                                                trustedTimeSnapshot.data,
                                           )
-                                        : (fileDetails.data!.mimeType
+                                          : (fileDetails.data!.mimeType
                                                   .startsWith('text/')
                                               ? _TextView(
-                                                  file: file,
-                                                  folderKey: folderKey,
-                                                  fileSize:
-                                                      fileDetails.data!.size,
-                                                  trustedNow: trustedTimeSnapshot.data,
-                                                )
+                                                file: file,
+                                                folderKey: folderKey,
+                                                fileSize:
+                                                    fileDetails.data!.size,
+                                                trustedNow:
+                                                    trustedTimeSnapshot.data,
+                                              )
                                               : (fileDetails.data!.mimeType ==
-                                                        'application/pdf'
-                                                    ? _PdfView(
+                                                      'application/pdf'
+                                                  ? _PdfView(
+                                                    file: file,
+                                                    folderKey: folderKey,
+                                                    fileSize:
+                                                        fileDetails.data!.size,
+                                                    trustedNow:
+                                                        trustedTimeSnapshot
+                                                            .data,
+                                                  )
+                                                  : (fileDetails.data!.mimeType
+                                                          .contains('excel') ||
+                                                      fileDetails.data!.mimeType
+                                                          .contains(
+                                                            'spreadsheet',
+                                                          )
+                                                      ? _ExcelView(
                                                         file: file,
                                                         folderKey: folderKey,
-                                                        fileSize: fileDetails
-                                                            .data!
-                                                            .size,
-                                                        trustedNow: trustedTimeSnapshot.data,
+                                                        fileSize:
+                                                            fileDetails
+                                                                .data!
+                                                                .size,
+                                                        trustedNow:
+                                                            trustedTimeSnapshot
+                                                                .data,
                                                       )
-                                                    : (fileDetails
-                                                              .data!
-                                                              .mimeType
-                                                              .startsWith(
-                                                                'audio/',
+                                                      : (fileDetails
+                                                                  .data!
+                                                                  .mimeType
+                                                                  .contains(
+                                                                    'word',
+                                                                  ) ||
+                                                              fileDetails
+                                                                  .data!
+                                                                  .mimeType
+                                                                  .contains(
+                                                                    'document',
+                                                                  )
+                                                          ? _UnsupportedFileView(
+                                                            file: file,
+                                                            folderKey:
+                                                                folderKey,
+                                                            fileName:
+                                                                fileDetails
+                                                                    .data!
+                                                                    .fileName,
+                                                          )
+                                                          : (fileDetails
+                                                                      .data!
+                                                                      .mimeType
+                                                                      .contains(
+                                                                        'presentation',
+                                                                      ) ||
+                                                                  fileDetails
+                                                                      .data!
+                                                                      .mimeType
+                                                                      .contains(
+                                                                        'powerpoint',
+                                                                      )
+                                                              ? _UnsupportedFileView(
+                                                                file: file,
+                                                                folderKey:
+                                                                    folderKey,
+                                                                fileName:
+                                                                    fileDetails
+                                                                        .data!
+                                                                        .fileName,
                                                               )
-                                                          ? _AudioView(
-                                                              file: file,
-                                                              folderKey:
-                                                                  folderKey,
-                                                              fileSize:
-                                                                  fileDetails
-                                                                      .data!
-                                                                      .size,
-                                                              trustedNow: trustedTimeSnapshot.data,
-                                                            )
-                                                          : _HexFileView(
-                                                              file: file,
-                                                              folderKey:
-                                                                  folderKey,
-                                                              mimeType:
-                                                                  fileDetails
-                                                                      .data!
-                                                                      .mimeType,
-                                                              fileSize:
-                                                                  fileDetails
-                                                                      .data!
-                                                                      .size,
-                                                              trustedNow: trustedTimeSnapshot.data,
-                                                            )))))),
+                                                              : (fileDetails
+                                                                          .data!
+                                                                          .mimeType
+                                                                          .startsWith(
+                                                                            'audio/',
+                                                                          )
+                                                                  ? _AudioView(
+                                                                    file: file,
+                                                                    folderKey:
+                                                                        folderKey,
+                                                                    fileSize:
+                                                                        fileDetails
+                                                                            .data!
+                                                                            .size,
+                                                                    trustedNow:
+                                                                        trustedTimeSnapshot
+                                                                            .data,
+                                                                  )
+                                                                  : _UnsupportedFileView(
+                                                                    file: file,
+                                                                    folderKey:
+                                                                        folderKey,
+                                                                    fileName:
+                                                                        fileDetails
+                                                                            .data!
+                                                                            .fileName,
+                                                                  ))))))))),
+                        ),
                       ),
-                    ),
             ),
           ),
         ],
@@ -381,62 +447,127 @@ class FileViewPage extends HookConsumerWidget {
     );
   }
 
-  Future<void> _openExternally(
-    BuildContext context,
-    WidgetRef ref,
-    FileModel file,
-    SecretKey folderKey,
-    String fileName,
-  ) async {
-    final vault = ref.read(vaultServiceProvider);
-    final dir = await getTemporaryDirectory();
-    final tempPath = '${dir.path}/$fileName';
-    final tempFile = File(tempPath);
+}
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Decrypting...', style: GoogleFonts.inter()),
-          backgroundColor: Colors.white10,
-          duration: const Duration(seconds: 1),
-        ),
-      );
+Future<void> openExternally(
+  BuildContext context,
+  WidgetRef ref,
+  FileModel file,
+  SecretKey folderKey,
+  String fileName,
+) async {
+  final vault = ref.read(vaultServiceProvider);
+  final dir = await getTemporaryDirectory();
+  final tempPath = '${dir.path}/$fileName';
+  final tempFile = File(tempPath);
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Decrypting...', style: GoogleFonts.inter()),
+        backgroundColor: Colors.white10,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  try {
+    final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
+    final sink = tempFile.openWrite();
+    await for (final chunk in stream) {
+      sink.add(chunk);
     }
+    await sink.flush();
+    await sink.close();
 
-    try {
-      final stream = vault.decryptFileStream(file: file, folderKey: folderKey);
-      final sink = tempFile.openWrite();
-      await for (final chunk in stream) {
-        sink.add(chunk);
-      }
-      await sink.flush();
-      await sink.close();
-
-      final res = await OpenFile.open(tempPath);
-      if (res.type != ResultType.done) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${res.message}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      // Check if file expired and was deleted
-      if (e.toString().contains('expired')) {
-        // Invalidate folder stats to update size in real-time
-        ref.invalidate(folderStatsProvider(file.folderId));
-        // Invalidate file list to remove expired file
-        ref.invalidate(fileNotifierProvider(file.folderId));
-      }
+    final res = await OpenFile.open(tempPath);
+    if (res.type != ResultType.done) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error: ${res.message}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
+  } catch (e) {
+    // Check if file expired and was deleted
+    if (e.toString().contains('expired')) {
+      // Invalidate folder stats to update size in real-time
+      ref.invalidate(folderStatsProvider(file.folderId));
+      // Invalidate file list to remove expired file
+      ref.invalidate(fileNotifierProvider(file.folderId));
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+}
+
+class _UnsupportedFileView extends ConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  final String fileName;
+
+  const _UnsupportedFileView({
+    required this.file,
+    required this.folderKey,
+    required this.fileName,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.insert_drive_file_outlined, size: 64, color: Colors.white24),
+            const SizedBox(height: 24),
+            Text(
+              "This file cannot be viewed within the app.",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.9),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "You can use external apps to view the file.",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: Colors.white54,
+              ),
+            ),
+            const SizedBox(height: 32),
+            OutlinedButton.icon(
+              onPressed: () {
+                openExternally(context, ref, file, folderKey, fileName);
+              },
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.white24),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: Text(
+                "Open Externally",
+                style: GoogleFonts.inter(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -498,7 +629,11 @@ class _ImageView extends HookConsumerWidget {
       bool isCancelled = false;
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
+          .decryptFileStream(
+            file: file,
+            folderKey: folderKey,
+            trustedNow: trustedNow,
+          )
           .listen(
             (chunk) {
               if (isCancelled) return;
@@ -519,9 +654,8 @@ class _ImageView extends HookConsumerWidget {
         bytes.addAll(chunk);
         received += chunk.length;
         // Avoid division by zero
-        progress.value = fileSize > 0
-            ? (received / fileSize).clamp(0.0, 1.0)
-            : 0.0;
+        progress.value =
+            fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
       });
 
       subscription.onDone(() {
@@ -556,8 +690,9 @@ class _ImageView extends HookConsumerWidget {
       child: Image.memory(
         imageBytes.value!,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.broken_image, color: Colors.white24, size: 50),
+        errorBuilder:
+            (context, error, stackTrace) =>
+                const Icon(Icons.broken_image, color: Colors.white24, size: 50),
       ),
     );
   }
@@ -618,9 +753,8 @@ class _VideoView extends HookConsumerWidget {
             if (isCancelled) break;
             sink.add(chunk);
             received += chunk.length;
-            progress.value = fileSize > 0
-                ? (received / fileSize).clamp(0.0, 1.0)
-                : 0.0;
+            progress.value =
+                fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
           }
 
           await sink.flush();
@@ -686,23 +820,22 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(File(widget.filePath))
-      ..initialize()
-          .then((_) {
-            if (mounted) {
-              setState(() {
-                _initialized = true;
-              });
-              _controller.play();
-            }
-          })
-          .catchError((error) {
-            if (mounted) {
-              setState(() {
-                _error = error.toString();
-              });
-            }
-          });
+    _controller = VideoPlayerController.file(File(widget.filePath))..initialize()
+        .then((_) {
+          if (mounted) {
+            setState(() {
+              _initialized = true;
+            });
+            _controller.play();
+          }
+        })
+        .catchError((error) {
+          if (mounted) {
+            setState(() {
+              _error = error.toString();
+            });
+          }
+        });
   }
 
   @override
@@ -805,15 +938,18 @@ class _TextView extends HookConsumerWidget {
       final bytes = <int>[];
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
+          .decryptFileStream(
+            file: file,
+            folderKey: folderKey,
+            trustedNow: trustedNow,
+          )
           .listen(
             (chunk) {
               if (isCancelled) return;
               bytes.addAll(chunk);
               received += chunk.length;
-              progress.value = fileSize > 0
-                  ? (received / fileSize).clamp(0.0, 1.0)
-                  : 0.0;
+              progress.value =
+                  fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
             },
             onDone: () {
               if (!isCancelled) {
@@ -892,9 +1028,8 @@ class _PdfView extends HookConsumerWidget {
             if (isCancelled) break;
             sink.add(chunk);
             received += chunk.length;
-            progress.value = fileSize > 0
-                ? (received / fileSize).clamp(0.0, 1.0)
-                : 0.0;
+            progress.value =
+                fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
           }
 
           await sink.flush();
@@ -948,164 +1083,7 @@ class _PdfView extends HookConsumerWidget {
   }
 }
 
-class _HexFileView extends HookConsumerWidget {
-  final FileModel file;
-  final SecretKey folderKey;
-  final String mimeType;
-  final int fileSize;
-  final DateTime? trustedNow;
 
-  const _HexFileView({
-    required this.file,
-    required this.folderKey,
-    required this.mimeType,
-    required this.fileSize,
-    this.trustedNow,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final hexData = useState<Uint8List?>(null);
-    final error = useState<Object?>(null);
-    final progress = useState<double>(0.0);
-
-    useEffect(() {
-      final vault = ref.read(vaultServiceProvider);
-      int received = 0;
-      bool isCancelled = false;
-      final bytes = <int>[];
-      int count = 0;
-
-      final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
-          .listen(
-            (chunk) {
-              if (isCancelled) return;
-
-              if (count < 10240) {
-                bytes.addAll(chunk);
-                count += chunk.length;
-                received += chunk.length;
-                progress.value = (received / 10240).clamp(0.0, 1.0);
-              } else {
-                // We have enough.
-              }
-            },
-            onDone: () {
-              if (!isCancelled) {
-                hexData.value = Uint8List.fromList(
-                  bytes.sublist(0, bytes.length > 10240 ? 10240 : bytes.length),
-                );
-              }
-            },
-            onError: (e) {
-              if (!isCancelled) error.value = e;
-            },
-          );
-
-      return () {
-        isCancelled = true;
-        subscription.cancel();
-      };
-    }, []);
-
-    if (error.value != null)
-      return Center(
-        child: Text(
-          'Error: ${error.value}',
-          style: GoogleFonts.inter(color: Colors.red),
-        ),
-      );
-    if (hexData.value == null)
-      return _LoadingProgressView(progress: progress.value);
-
-    final data = hexData.value!;
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Text(
-                'Binary Preview ($mimeType)',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Showing first ${data.length} bytes',
-                style: GoogleFonts.inter(fontSize: 12, color: Colors.white38),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: (data.length / 16).ceil(),
-            itemBuilder: (context, index) {
-              final start = index * 16;
-              final end = (start + 16 > data.length) ? data.length : start + 16;
-              final row = data.sublist(start, end);
-
-              final hex = row
-                  .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                  .join(' ');
-              final ascii = row
-                  .map(
-                    (b) => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.',
-                  )
-                  .join('');
-
-              return Container(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 50,
-                      child: Text(
-                        start.toRadixString(16).padLeft(4, '0'),
-                        style: GoogleFonts.robotoMono(
-                          color: Colors.white30,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        hex,
-                        style: GoogleFonts.robotoMono(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 1,
-                      child: Text(
-                        ascii,
-                        style: GoogleFonts.robotoMono(
-                          color: Colors.white54,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _AudioView extends HookConsumerWidget {
   final FileModel file;
@@ -1160,9 +1138,8 @@ class _AudioView extends HookConsumerWidget {
             if (isCancelled) break;
             sink.add(chunk);
             received += chunk.length;
-            progress.value = fileSize > 0
-                ? (received / fileSize).clamp(0.0, 1.0)
-                : 0.0;
+            progress.value =
+                fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
           }
 
           await sink.flush();
@@ -1310,15 +1287,18 @@ class _SvgView extends HookConsumerWidget {
       final bytes = <int>[];
 
       final subscription = vault
-          .decryptFileStream(file: file, folderKey: folderKey, trustedNow: trustedNow)
+          .decryptFileStream(
+            file: file,
+            folderKey: folderKey,
+            trustedNow: trustedNow,
+          )
           .listen(
             (chunk) {
               if (isCancelled) return;
               bytes.addAll(chunk);
               received += chunk.length;
-              progress.value = fileSize > 0
-                  ? (received / fileSize).clamp(0.0, 1.0)
-                  : 0.0;
+              progress.value =
+                  fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
             },
             onDone: () {
               if (!isCancelled) {
@@ -1346,3 +1326,124 @@ class _SvgView extends HookConsumerWidget {
     return SvgPicture.string(svgContent.value!);
   }
 }
+
+class _ExcelView extends HookConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  final int fileSize;
+  final DateTime? trustedNow;
+
+  const _ExcelView({
+    required this.file,
+    required this.folderKey,
+    required this.fileSize,
+    this.trustedNow,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final excelData = useState<Excel?>(null);
+    final error = useState<Object?>(null);
+    final progress = useState<double>(0.0);
+
+    useEffect(() {
+      final vault = ref.read(vaultServiceProvider);
+      int received = 0;
+      bool isCancelled = false;
+      final bytes = <int>[];
+
+      final subscription = vault
+          .decryptFileStream(
+            file: file,
+            folderKey: folderKey,
+            trustedNow: trustedNow,
+          )
+          .listen(
+            (chunk) {
+              if (isCancelled) return;
+              bytes.addAll(chunk);
+              received += chunk.length;
+              progress.value =
+                  fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
+            },
+            onDone: () {
+              if (!isCancelled) {
+                try {
+                  final excel = Excel.decodeBytes(bytes);
+                  excelData.value = excel;
+                } catch (e) {
+                  error.value = "Failed to parse Excel file: $e";
+                }
+              }
+            },
+            onError: (e) {
+              if (!isCancelled) error.value = e;
+            },
+          );
+
+      return () {
+        isCancelled = true;
+        subscription.cancel();
+      };
+    }, []);
+
+    if (error.value != null)
+      return Center(
+        child: Text(
+          'Error: ${error.value}',
+          style: GoogleFonts.inter(color: Colors.red),
+        ),
+      );
+    if (excelData.value == null)
+      return _LoadingProgressView(progress: progress.value);
+
+    final excel = excelData.value!;
+    final sheetName = excel.tables.keys.firstOrNull;
+    if (sheetName == null) {
+      return Center(
+        child: Text(
+          'Empty Excel File',
+          style: GoogleFonts.inter(color: Colors.white70),
+        ),
+      );
+    }
+    final table = excel.tables[sheetName]!;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns:
+              table.maxColumns == 0
+                  ? []
+                  : List.generate(
+                    table.maxColumns,
+                    (index) => DataColumn(
+                      label: Text(
+                        'Col $index',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+          rows:
+              table.rows.map((row) {
+                return DataRow(
+                  cells:
+                      row.map((cell) {
+                        return DataCell(
+                          Text(
+                            cell?.value.toString() ?? '',
+                            style: GoogleFonts.inter(color: Colors.white70),
+                          ),
+                        );
+                      }).toList(),
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+
