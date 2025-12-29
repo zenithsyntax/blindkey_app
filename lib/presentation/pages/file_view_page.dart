@@ -436,7 +436,7 @@ class FileViewPage extends HookConsumerWidget {
       ),
     );
   }
-
+ 
   Widget _buildFileView(
     FileModel file,
     SecretKey folderKey,
