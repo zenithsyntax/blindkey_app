@@ -1,4 +1,5 @@
 import 'package:blindkey_app/application/auth/app_lock_notifier.dart';
+import 'package:flutter/services.dart';
 import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
@@ -13,6 +14,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize AdMob
   await MobileAds.instance.initialize();
+  
+  // Lock orientation to portrait
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   runApp(const ProviderScope(child: BlindKeyApp()));
 }
 
