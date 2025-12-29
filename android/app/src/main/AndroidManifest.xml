@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"
         android:minSdkVersion="33"/>
     <application
-        android:label="blindkey_app"
+        android:label="blindkey"
         android:name="${applicationName}"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/launcher_icon">
