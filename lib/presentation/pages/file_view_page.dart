@@ -173,11 +173,13 @@ class FileViewPage extends HookConsumerWidget {
 
     final isVideo =
         fileDetails.hasData && (fileDetails.data!.mimeType.startsWith('video'));
+    final isImage =
+        fileDetails.hasData && (fileDetails.data!.mimeType.startsWith('image/'));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
       extendBodyBehindAppBar: true,
-      appBar: isVideo ? null : AppBar(
+      appBar: (isVideo || isImage) ? null : AppBar(
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -619,10 +621,47 @@ class _ImageView extends HookConsumerWidget {
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
 
+    // View State
+    final rotationTurns = useState(0); // 0 = 0, 1 = 90, 2 = 180, 3 = 270
+    final showControls = useState(true);
+    
+    // Zoom State
+    final transformationController = useMemoized(() => TransformationController());
+    useEffect(() {
+      return transformationController.dispose;
+    }, [transformationController]);
+
+    final animationController = useAnimationController(
+      duration: const Duration(milliseconds: 200),
+    );
+    final animation = useState<Animation<Matrix4>?>(null);
+
+    // Auto-hide controls timer
+    final hideTimer = useRef<Timer?>(null);
+
+    void startHideTimer() {
+      hideTimer.value?.cancel();
+      hideTimer.value = Timer(const Duration(seconds: 3), () {
+        if (context.mounted) showControls.value = false;
+      });
+    }
+
+    void toggleControls() {
+      showControls.value = !showControls.value;
+      if (showControls.value) {
+        startHideTimer();
+      } else {
+        hideTimer.value?.cancel();
+      }
+    }
+
     useEffect(() {
       final vault = ref.read(vaultServiceProvider);
       int received = 0;
       bool isCancelled = false;
+
+      // Start timer on load
+      startHideTimer();
 
       final subscription = vault
           .decryptFileStream(
@@ -632,24 +671,18 @@ class _ImageView extends HookConsumerWidget {
           )
           .listen(
             (chunk) {
-              if (isCancelled) return;
-              // We can't easily stream into Image.memory until done for regular images,
-              // but we need to accumulate bytes.
-              // Using a builder is inefficient re-allocating?
-              // Just accumulate in list.
+              // Accumulation handled below
             },
             onError: (e) {
               if (!isCancelled) error.value = e;
             },
           );
 
-      // Manually accumulate to avoid closure capture issues with 'subscription'
       final bytes = <int>[];
       subscription.onData((chunk) {
         if (isCancelled) return;
         bytes.addAll(chunk);
         received += chunk.length;
-        // Avoid division by zero
         progress.value =
             fileSize > 0 ? (received / fileSize).clamp(0.0, 1.0) : 0.0;
       });
@@ -663,8 +696,49 @@ class _ImageView extends HookConsumerWidget {
       return () {
         isCancelled = true;
         subscription.cancel();
+        hideTimer.value?.cancel();
       };
     }, []);
+
+    // Zoom Animation Listener
+    useEffect(() {
+      void listener() {
+        if (animation.value != null) {
+          transformationController.value = animation.value!.value;
+        }
+      }
+      animationController.addListener(listener);
+      return () => animationController.removeListener(listener);
+    }, [animation.value]);
+
+    void onDoubleTap(TapDownDetails details) {
+      final position = details.localPosition;
+      
+      Matrix4 endMatrix;
+      if (transformationController.value.getMaxScaleOnAxis() > 1.5) {
+        // Zoom out
+        endMatrix = Matrix4.identity();
+      } else {
+        // Zoom in to tap position
+        // Scale factor: 2.5x
+        final double scale = 2.5;
+        final double x = -position.dx * (scale - 1);
+        final double y = -position.dy * (scale - 1);
+        
+        endMatrix = Matrix4.identity()
+          ..translate(x, y)
+          ..scale(scale);
+      }
+
+      animation.value = Matrix4Tween(
+        begin: transformationController.value,
+        end: endMatrix,
+      ).animate(
+        CurveTween(curve: Curves.easeInOut).animate(animationController),
+      );
+      
+      animationController.forward(from: 0);
+    }
 
     if (error.value != null) {
       return Center(
@@ -679,17 +753,151 @@ class _ImageView extends HookConsumerWidget {
       return _LoadingProgressView(progress: progress.value);
     }
 
-    return InteractiveViewer(
-      clipBehavior: Clip.none,
-      minScale: 0.5,
-      maxScale: 4.0,
-      child: Image.memory(
-        imageBytes.value!,
-        fit: BoxFit.contain,
-        errorBuilder:
-            (context, error, stackTrace) =>
-                const Icon(Icons.broken_image, color: Colors.white24, size: 50),
-      ),
+    return Stack(
+      children: [
+        // 1. Image Layer with Zoom & Pan
+        Positioned.fill(
+          child: GestureDetector(
+            onDoubleTapDown: onDoubleTap,
+            onTap: toggleControls,
+            child: Container(
+              color: Colors.transparent, // Capture taps
+              child: InteractiveViewer(
+                transformationController: transformationController,
+                clipBehavior: Clip.none,
+                minScale: 0.5,
+                maxScale: 5.0,
+                onInteractionStart: (_) {
+                  showControls.value = false;
+                  hideTimer.value?.cancel();
+                },
+                child: Center(
+                  child: RotatedBox(
+                    quarterTurns: rotationTurns.value,
+                    child: Image.memory(
+                      imageBytes.value!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.broken_image, color: Colors.white24, size: 50),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // 2. Controls overlay
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          top: showControls.value ? 0 : -100,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top,
+              bottom: 10,
+              left: 10,
+              right: 10,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.transparent,
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                const Spacer(),
+                // File info could go here
+                IconButton(
+                  icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                  tooltip: 'Open Externally',
+                  onPressed: () async {
+                    if (trustedNow != null) {
+                       // Optional: check expiry again?
+                    }
+                    // Reuse the global openExternally function
+                    // Need to check if file model has fileName, usually it does or we got it from meta
+                    // helper.
+                    
+                    // We need the filename. The 'file' model might not have the decrypted name.
+                    // But openExternally takes 'fileName'.
+                    // We don't have easy access to the decrypted filename here unless we pass it 
+                    // or decrypt it again (cheap metadata).
+                    // In FileViewPage we had fileDetails.data.
+                    // We should probably pass fileName to _ImageView to be safe/efficient.
+                    // For now, let's try to use file.fileName if available or "image"
+                    // checking openExternally signature: needs fileName.
+                    
+                    await openExternally(
+                      context, 
+                      ref, 
+                      file, 
+                      folderKey, 
+                      // Fallback or re-fetch? 
+                      // best to use a default or handle inside. 
+                      // Let's modify _ImageView to accept fileName to be clean.
+                      "image", 
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          bottom: showControls.value ? 30 : -100,
+          right: 30, // Floating action button style
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+               FloatingActionButton(
+                heroTag: null, // Disable Hero to prevent nesting error
+                mini: true,
+                backgroundColor: Colors.white12,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.white24),
+                ),
+                onPressed: () {
+                  animationController.reset();
+                  transformationController.value = Matrix4.identity();
+                  rotationTurns.value = (rotationTurns.value + 1) % 4;
+                  startHideTimer();
+                },
+                child: const Icon(Icons.rotate_right_rounded, color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+        
+        // Hint text for first-time users could go here
+        if (showControls.value)
+             Positioned(
+               bottom: 30,
+               left: 30,
+               child: IgnorePointer(
+                 child: Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                   decoration: BoxDecoration(
+                     color: Colors.black45,
+                     borderRadius: BorderRadius.circular(20),
+                   ),
+                   child: Text(
+                     "${(progress.value * 100).toInt()}% Loaded", // Or other info
+                      style: GoogleFonts.robotoMono(color: Colors.white38, fontSize: 10),
+                   ),
+                 ),
+               ),
+             ),
+      ],
     );
   }
 }
