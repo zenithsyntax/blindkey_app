@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'dart:ui'; // Added for BackdropFilter
 import 'package:flutter/services.dart';
 
+import 'package:blindkey_app/application/services/ad_service.dart';
+import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
+
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
@@ -422,8 +425,18 @@ class FileViewPage extends HookConsumerWidget {
           ),
         ],
       ),
+      bottomNavigationBar: Container(
+        color: const Color(0xFF0F0F0F),
+        child: SafeArea(
+          top: false,
+          child: BannerAdWidget(
+            adUnitId: AdService.fileViewBannerAdId,
+          ),
+        ),
+      ),
     );
   }
+
   Widget _buildFileView(
     FileModel file,
     SecretKey folderKey,

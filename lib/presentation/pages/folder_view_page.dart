@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui'; // Added for BackdropFilter
 
 import 'package:blindkey_app/application/providers.dart';
+import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
@@ -11,6 +12,7 @@ import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
 import 'package:blindkey_app/presentation/pages/file_view_page.dart';
+import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -119,32 +121,42 @@ class FolderViewPage extends HookConsumerWidget {
                         );
                       },
                     ),
-                  
+
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+                    icon: const Icon(
+                      Icons.more_vert_rounded,
+                      color: Colors.white70,
+                    ),
                     color: const Color(0xFF1A1A1A),
                     elevation: 8,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     onSelected: (value) async {
                       if (value == 'change_password') {
                         await showDialog(
-                           context: context,
-                           builder: (context) => _ChangePasswordDialog(
-                             folder: folder,
-                             onSuccess: (newKey) {
-                                // Invalidate folder list to reflect new salt/verification
-                                ref.invalidate(folderNotifierProvider);
-                                
-                                Navigator.of(context).pop(); // Close FolderViewPage
-                                
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text("Password changed. Please reopen vault.", style: GoogleFonts.inter()),
-                                    backgroundColor: Colors.green,
+                          context: context,
+                          builder: (context) => _ChangePasswordDialog(
+                            folder: folder,
+                            onSuccess: (newKey) {
+                              // Invalidate folder list to reflect new salt/verification
+                              ref.invalidate(folderNotifierProvider);
+
+                              Navigator.of(
+                                context,
+                              ).pop(); // Close FolderViewPage
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    "Password changed. Please reopen vault.",
+                                    style: GoogleFonts.inter(),
                                   ),
-                                );
-                             },
-                           ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            },
+                          ),
                         );
                       }
                     },
@@ -153,7 +165,11 @@ class FolderViewPage extends HookConsumerWidget {
                         value: 'change_password',
                         child: Row(
                           children: [
-                            const Icon(Icons.lock_reset_rounded, size: 20, color: Colors.white70),
+                            const Icon(
+                              Icons.lock_reset_rounded,
+                              size: 20,
+                              color: Colors.white70,
+                            ),
                             const SizedBox(width: 12),
                             Text(
                               'Change Password',
@@ -260,6 +276,16 @@ class FolderViewPage extends HookConsumerWidget {
               const SliverPadding(
                 padding: EdgeInsets.only(bottom: 100),
               ), // Bottom spacing for FAB
+              // Banner Ad at bottom
+              SliverToBoxAdapter(
+                child: Container(
+                  color: const Color(0xFF0F0F0F),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: BannerAdWidget(
+                    adUnitId: AdService.folderViewBannerAdId,
+                  ),
+                ),
+              ),
             ],
           ),
 
@@ -396,6 +422,13 @@ class FolderViewPage extends HookConsumerWidget {
     );
 
     if (canUpload) {
+      // Show interstitial ad if conditions are met: file count < 10 and no file > 100MB
+      // (We already checked that no file is > 100MB above, so if we reach here, all files are <= 100MB)
+      if (files.length < 10) {
+        final adService = ref.read(adServiceProvider);
+        adService.showImportFileInterstitialAd();
+      }
+
       ref
           .read(fileNotifierProvider(folder.id).notifier)
           .uploadFiles(files, folder, folderKey);
@@ -594,7 +627,8 @@ class _ShareDialog extends HookWidget {
                             );
 
                             if (selectedDateTime.isBefore(DateTime.now())) {
-                              errorText.value = "Expiry time cannot be in the past";
+                              errorText.value =
+                                  "Expiry time cannot be in the past";
                             } else {
                               expiry.value = selectedDateTime;
                               errorText.value = null;
@@ -640,15 +674,19 @@ class _ShareDialog extends HookWidget {
                   padding: const EdgeInsets.only(top: 8, left: 4),
                   child: Row(
                     children: [
-                       Icon(Icons.wifi_lock_rounded, size: 12, color: Colors.blueAccent),
-                       const SizedBox(width: 4),
-                       Text(
-                         "Secure timestamp verification requires internet",
-                         style: GoogleFonts.inter(
-                           fontSize: 10,
-                           color: Colors.blueAccent,
-                         ),
-                       ),
+                      Icon(
+                        Icons.wifi_lock_rounded,
+                        size: 12,
+                        color: Colors.blueAccent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Secure timestamp verification requires internet",
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: Colors.blueAccent,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1501,7 +1539,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
     final status = useState("Initializing...");
     final resultPath = useState<String?>(null);
     final error = useState<String?>(null);
-    
+
     // New state for Save feedback
     final saveMessage = useState<String?>(null);
     final isSaveError = useState(false);
@@ -1540,21 +1578,21 @@ class _ExportProgressDialog extends HookConsumerWidget {
       try {
         saveMessage.value = "Saving...";
         isSaveError.value = false;
-        
+
         await _saveToDownloads(context, path);
-        
-        // _saveToDownloads was void and used SnackBars. 
+
+        // _saveToDownloads was void and used SnackBars.
         // We need to refactor it or wrap it?
-        // Actually, since _saveToDownloads is inside the class (helper), 
+        // Actually, since _saveToDownloads is inside the class (helper),
         // we can just modify IT to return a result or pass setters.
         // But since this is a widget, let's just inline the logic or modify the helper.
         // For minimal diff, check _saveToDownloads return.
-        // Wait, _saveToDownloads currently shows SnackBars. 
-        // I should Copy-Paste the logic here or modify the helper method 
+        // Wait, _saveToDownloads currently shows SnackBars.
+        // I should Copy-Paste the logic here or modify the helper method
         // to THROW on error and RETURN on success, and handle UI here.
         // But _saveToDownloads handles permissions which might show UI.
-        
-        // Let's modify _saveToDownloads to return a String result (Success message) 
+
+        // Let's modify _saveToDownloads to return a String result (Success message)
         // or throw error. And NOT show SnackBars.
       } catch (e) {
         saveMessage.value = e.toString();
@@ -1618,13 +1656,13 @@ class _ExportProgressDialog extends HookConsumerWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isSaveError.value 
-                          ? Colors.red.withOpacity(0.1) 
+                      color: isSaveError.value
+                          ? Colors.red.withOpacity(0.1)
                           : Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: isSaveError.value 
-                            ? Colors.red.withOpacity(0.3) 
+                        color: isSaveError.value
+                            ? Colors.red.withOpacity(0.3)
                             : Colors.green.withOpacity(0.3),
                       ),
                     ),
@@ -1633,7 +1671,9 @@ class _ExportProgressDialog extends HookConsumerWidget {
                         Icon(
                           isSaveError.value ? Icons.error_outline : Icons.check,
                           size: 20,
-                          color: isSaveError.value ? Colors.redAccent : Colors.greenAccent,
+                          color: isSaveError.value
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1692,19 +1732,26 @@ class _ExportProgressDialog extends HookConsumerWidget {
                         ElevatedButton.icon(
                           onPressed: () async {
                             // Use modified saving logic
-                            final msg = await _saveToDownloads(context, resultPath.value!);
+                            final msg = await _saveToDownloads(
+                              context,
+                              resultPath.value!,
+                            );
                             if (msg.startsWith("Error:")) {
-                               saveMessage.value = msg.substring(6).trim(); // Remove "Error:" prefix
-                               isSaveError.value = true;
+                              saveMessage.value = msg
+                                  .substring(6)
+                                  .trim(); // Remove "Error:" prefix
+                              isSaveError.value = true;
                             } else {
-                               saveMessage.value = msg;
-                               isSaveError.value = false;
+                              saveMessage.value = msg;
+                              isSaveError.value = false;
                             }
                           },
                           icon: const Icon(Icons.download_rounded, size: 18),
                           label: Text(
                             "Save to Downloads",
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
@@ -1722,13 +1769,19 @@ class _ExportProgressDialog extends HookConsumerWidget {
                             ], text: 'Secure BlindKey Package');
                           },
                           style: IconButton.styleFrom(
-                            side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                            side: BorderSide(
+                              color: Colors.white.withOpacity(0.2),
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
                             padding: const EdgeInsets.all(12),
                           ),
-                          icon: const Icon(Icons.share_rounded, color: Colors.white70, size: 20),
+                          icon: const Icon(
+                            Icons.share_rounded,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
                           tooltip: 'Share',
                         ),
                       ],
@@ -2096,17 +2149,14 @@ class _ChangePasswordDialog extends HookConsumerWidget {
   final FolderModel folder;
   final Function(SecretKey) onSuccess;
 
-  const _ChangePasswordDialog({
-    required this.folder,
-    required this.onSuccess,
-  });
+  const _ChangePasswordDialog({required this.folder, required this.onSuccess});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final oldPasswordController = useTextEditingController();
     final newPasswordController = useTextEditingController();
     final confirmPasswordController = useTextEditingController();
-    
+
     final isLoading = useState(false);
     final errorText = useState<String?>(null);
     final success = useState(false);
@@ -2128,190 +2178,267 @@ class _ChangePasswordDialog extends HookConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               if (success.value) ...[
-                 Center(
-                   child: Column(
-                     children: [
-                       const Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent, size: 64),
-                       const SizedBox(height: 16),
-                       Text("Success!", style: GoogleFonts.inter(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                       const SizedBox(height: 8),
-                       Text(
-                         "Password changed successfully.\nPlease reopen the vault.", 
-                         style: GoogleFonts.inter(color: Colors.white70),
-                         textAlign: TextAlign.center,
+              if (success.value) ...[
+                Center(
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline_rounded,
+                        color: Colors.greenAccent,
+                        size: 64,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Success!",
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () {
-                               Navigator.of(context).pop(); // Close dialog
-                               onSuccess(SecretKey([]));
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Password changed successfully.\nPlease reopen the vault.",
+                        style: GoogleFonts.inter(color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(); // Close dialog
+                            onSuccess(SecretKey([]));
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text("OK", style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                          ),
+                          child: Text(
+                            "OK",
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                     ],
-                   ),
-                 )
-               ] else ...[
-                  Text(
-                    "Change Password",
-                    style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  
-                  // Old Password
-                  TextField(
-                    controller: oldPasswordController,
-                    obscureText: isOldPasswordObscure.value,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Old Password",
-                      hintStyle: GoogleFonts.inter(color: Colors.white30),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      suffixIcon: IconButton(
-                        icon: Icon(isOldPasswordObscure.value ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.white30),
-                        onPressed: () => isOldPasswordObscure.value = !isOldPasswordObscure.value,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // New Password
-                  TextField(
-                    controller: newPasswordController,
-                    obscureText: isNewPasswordObscure.value,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "New Password",
-                      hintStyle: GoogleFonts.inter(color: Colors.white30),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      suffixIcon: IconButton(
-                        icon: Icon(isNewPasswordObscure.value ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.white30),
-                        onPressed: () => isNewPasswordObscure.value = !isNewPasswordObscure.value,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Confirm Password
-                  TextField(
-                    controller: confirmPasswordController,
-                    obscureText: isConfirmPasswordObscure.value,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Confirm New Password",
-                      hintStyle: GoogleFonts.inter(color: Colors.white30),
-                      filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      suffixIcon: IconButton(
-                        icon: Icon(isConfirmPasswordObscure.value ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: Colors.white30),
-                        onPressed: () => isConfirmPasswordObscure.value = !isConfirmPasswordObscure.value,
-                      ),
-                    ),
-                  ),
-                  
-                  if (errorText.value != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        errorText.value!,
-                        style: GoogleFonts.inter(color: Colors.redAccent, fontSize: 13),
-                      ),
-                    ),
-                    
-                  const SizedBox(height: 32),
-                  
-                  Row(
-                    children: [
-                       Expanded(
-                         child: TextButton(
-                           onPressed: isLoading.value ? null : () => Navigator.pop(context),
-                           child: Text("Cancel", style: GoogleFonts.inter(color: Colors.white54)),
-                         ),
-                       ),
-                       const SizedBox(width: 12),
-                       Expanded(
-                         child: ElevatedButton(
-                           onPressed: isLoading.value ? null : () async {
-                              final oldPass = oldPasswordController.text;
-                              final newPass = newPasswordController.text;
-                              final confirmPass = confirmPasswordController.text;
-                              
-                              if (newPass.isEmpty) {
-                                errorText.value = "Enter new password";
-                                return;
-                              }
-                              
-                              if (newPass != confirmPass) {
-                                errorText.value = "Passwords do not match";
-                                return;
-                              }
-                              
-                              if (newPass.length < 4) {
-                                errorText.value = "Password too short";
-                                return;
-                              }
-                              
-                              isLoading.value = true;
-                              errorText.value = null;
-                              
-                              final vault = ref.read(vaultServiceProvider);
-                              final result = await vault.changeFolderPassword(
-                                folder: folder,
-                                oldPassword: oldPass,
-                                newPassword: newPass,
-                              );
-                              
-                              result.fold(
-                                (failure) {
-                                  isLoading.value = false;
-                                  errorText.value = "Incorrect old password or update failed.";
-                                },
-                                (newKey) {
-                                  isLoading.value = false;
-                                  success.value = true;
-                                },
-                              );
-                           },
-                           style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                           ),
-                           child: isLoading.value 
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)),
-                                    const SizedBox(width: 8),
-                                    Text("Updating...", style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.black)),
-                                  ],
-                                )
-                              : Text("Update", style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                         ),
-                       ),
                     ],
                   ),
-               ],
+                ),
+              ] else ...[
+                Text(
+                  "Change Password",
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Old Password
+                TextField(
+                  controller: oldPasswordController,
+                  obscureText: isOldPasswordObscure.value,
+                  style: GoogleFonts.inter(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "Old Password",
+                    hintStyle: GoogleFonts.inter(color: Colors.white30),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.05),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        isOldPasswordObscure.value
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        color: Colors.white30,
+                      ),
+                      onPressed: () => isOldPasswordObscure.value =
+                          !isOldPasswordObscure.value,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // New Password
+                TextField(
+                  controller: newPasswordController,
+                  obscureText: isNewPasswordObscure.value,
+                  style: GoogleFonts.inter(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "New Password",
+                    hintStyle: GoogleFonts.inter(color: Colors.white30),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.05),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        isNewPasswordObscure.value
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        color: Colors.white30,
+                      ),
+                      onPressed: () => isNewPasswordObscure.value =
+                          !isNewPasswordObscure.value,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Confirm Password
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: isConfirmPasswordObscure.value,
+                  style: GoogleFonts.inter(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "Confirm New Password",
+                    hintStyle: GoogleFonts.inter(color: Colors.white30),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.05),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        isConfirmPasswordObscure.value
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        color: Colors.white30,
+                      ),
+                      onPressed: () => isConfirmPasswordObscure.value =
+                          !isConfirmPasswordObscure.value,
+                    ),
+                  ),
+                ),
+
+                if (errorText.value != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      errorText.value!,
+                      style: GoogleFonts.inter(
+                        color: Colors.redAccent,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 32),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: isLoading.value
+                            ? null
+                            : () => Navigator.pop(context),
+                        child: Text(
+                          "Cancel",
+                          style: GoogleFonts.inter(color: Colors.white54),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isLoading.value
+                            ? null
+                            : () async {
+                                final oldPass = oldPasswordController.text;
+                                final newPass = newPasswordController.text;
+                                final confirmPass =
+                                    confirmPasswordController.text;
+
+                                if (newPass.isEmpty) {
+                                  errorText.value = "Enter new password";
+                                  return;
+                                }
+
+                                if (newPass != confirmPass) {
+                                  errorText.value = "Passwords do not match";
+                                  return;
+                                }
+
+                                if (newPass.length < 4) {
+                                  errorText.value = "Password too short";
+                                  return;
+                                }
+
+                                isLoading.value = true;
+                                errorText.value = null;
+
+                                final vault = ref.read(vaultServiceProvider);
+                                final result = await vault.changeFolderPassword(
+                                  folder: folder,
+                                  oldPassword: oldPass,
+                                  newPassword: newPass,
+                                );
+
+                                result.fold(
+                                  (failure) {
+                                    isLoading.value = false;
+                                    errorText.value =
+                                        "Incorrect old password or update failed.";
+                                  },
+                                  (newKey) {
+                                    isLoading.value = false;
+                                    success.value = true;
+                                  },
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: isLoading.value
+                            ? Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.black,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    "Updating...",
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                "Update",
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

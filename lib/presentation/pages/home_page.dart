@@ -1,4 +1,5 @@
 import 'package:blindkey_app/application/providers.dart';
+import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
@@ -7,6 +8,7 @@ import 'package:blindkey_app/presentation/pages/settings/security_settings_page.
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/presentation/pages/folder_view_page.dart';
 import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
+import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -135,6 +137,14 @@ class HomePage extends HookConsumerWidget {
                             ],
                           ),
                         ),
+                      ),
+                    ),
+                    
+                    // Banner Ad at bottom
+                    Container(
+                      color: const Color(0xFF0F0F0F),
+                      child: BannerAdWidget(
+                        adUnitId: AdService.homeBannerAdId,
                       ),
                     ),
                   ],
@@ -753,6 +763,10 @@ class HomePage extends HookConsumerWidget {
                                   );
 
                                   try {
+                                    // Show interstitial ad before importing
+                                    final adService = ref.read(adServiceProvider);
+                                    adService.showImportBlindKeyInterstitialAd();
+                                    
                                     await ref
                                         .read(folderNotifierProvider.notifier)
                                         .importFolder(

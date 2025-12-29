@@ -1,6 +1,7 @@
 
 import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/application/services/trusted_time_service.dart';
+import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/domain/repositories/file_repository.dart';
 import 'package:blindkey_app/domain/repositories/folder_repository.dart';
 import 'package:blindkey_app/infrastructure/encryption/cryptography_service.dart';
@@ -84,4 +85,12 @@ VaultService vaultService(VaultServiceRef ref) {
 @riverpod
 FolderRepository folderRepositoryImpl(FolderRepositoryImplRef ref) {
   return ref.watch(sharedMetadataRepositoryProvider);
+}
+
+@Riverpod(keepAlive: true)
+AdService adService(AdServiceRef ref) {
+  final service = AdService();
+  service.initialize();
+  ref.onDispose(() => service.dispose());
+  return service;
 }

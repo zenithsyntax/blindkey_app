@@ -206,5 +206,22 @@ final folderRepositoryImplProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FolderRepositoryImplRef = AutoDisposeProviderRef<FolderRepository>;
+String _$adServiceHash() => r'0ab4e047a1d0a0d9a8b9453036358f2085fcd734';
+
+/// See also [adService].
+@ProviderFor(adService)
+final adServiceProvider = Provider<AdService>.internal(
+  adService,
+  name: r'adServiceProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$adServiceHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AdServiceRef = ProviderRef<AdService>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

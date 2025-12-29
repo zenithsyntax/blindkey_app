@@ -1,14 +1,18 @@
 import 'package:blindkey_app/application/auth/app_lock_notifier.dart';
 import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
+import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
 import 'package:blindkey_app/presentation/pages/home_page.dart';
 import 'package:blindkey_app/presentation/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize AdMob
+  await MobileAds.instance.initialize();
   runApp(const ProviderScope(child: BlindKeyApp()));
 }
 
