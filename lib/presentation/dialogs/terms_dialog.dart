@@ -1,3 +1,5 @@
+import 'package:blindkey_app/presentation/pages/settings/user_guide_page.dart';
+import 'package:blindkey_app/presentation/dialogs/user_guide_dialog.dart';
 import 'package:blindkey_app/presentation/constants/terms_data.dart';
 import 'dart:ui';
 import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
@@ -110,7 +112,21 @@ class TermsDialog extends ConsumerWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () async {
+                          final navigator = Navigator.of(context);
+                          
+                          // 1. Mark terms as accepted (This will cause TermsDialog to unmount)
                           await ref.read(termsNotifierProvider.notifier).acceptTerms();
+
+                          // 2. Show the User Guide Popup immediately
+                          if (navigator.mounted) {
+                            navigator.push(
+                              PageRouteBuilder(
+                                opaque: false,
+                                barrierColor: Colors.black54,
+                                pageBuilder: (context, _, __) => const UserGuideDialog(),
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primaryRed,

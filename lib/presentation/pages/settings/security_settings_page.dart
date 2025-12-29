@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:blindkey_app/presentation/pages/settings/privacy_policy_page.dart';
 import 'package:blindkey_app/presentation/pages/settings/terms_content_page.dart';
+import 'package:blindkey_app/presentation/pages/settings/user_guide_page.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class SecuritySettingsPage extends HookConsumerWidget {
@@ -190,6 +191,29 @@ class SecuritySettingsPage extends HookConsumerWidget {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const PrivacyPolicyPage(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // User Guide
+                _buildGlassTile(
+                  child: ListTile(
+                    title: Text(
+                      'User Guide',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white54),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const UserGuidePage(autoPlay: false),
                         ),
                       );
                     },
