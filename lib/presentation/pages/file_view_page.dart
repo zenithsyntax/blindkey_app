@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui'; // Added for BackdropFilter
+import 'package:flutter/services.dart';
 
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
@@ -175,7 +177,7 @@ class FileViewPage extends HookConsumerWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
+      appBar: isVideo ? null : AppBar(
         centerTitle: true,
         backgroundColor: Colors.black.withOpacity(0.5),
         flexibleSpace: ClipRect(
@@ -801,13 +803,116 @@ class _VideoView extends HookConsumerWidget {
       return _LoadingProgressView(progress: progress.value);
     }
 
-    return _VideoPlayerView(filePath: videoPath.value!);
+    return _VideoPlayerView(
+      filePath: videoPath.value!,
+      onOpenExternal: () async {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: AlertDialog(
+                  backgroundColor: const Color(0xFF1A1A1A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: Colors.white.withOpacity(0.08),
+                    ),
+                  ),
+                  title: Text(
+                    "Leave Secure Vault?",
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  content: Text(
+                    'You are about to open this file externally.\n\n'
+                    '• Screenshot protection will be LOST.\n'
+                    '• The file will be decrypted temporarily.\n\n'
+                    'Proceed?',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.inter(color: Colors.white54),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        'Open Externally',
+                        style: GoogleFonts.inter(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        );
+
+        if (confirm != true) return;
+
+        // Try to fetch filename if possible, or use ID logic
+        String fileName = file.id; 
+        // We can get metadata again or try to extract from temp path, but openExternally expects name.
+        // The original openExternally uses fileDetails.data.fileName.
+        // We can re-fetch metadata or just use ID. openExternally uses it for temp file naming.
+        // Let's quickly fetch metadata since we are inside HookConsumerWidget, but we can't easily wait.
+        // Actually we can just use the openExternally function. It needs fileName.
+        // Let's try to get fileName from the metadata check we did in useEffect or just pass "Video.mp4" as default if unknown.
+        // Wait, current useEffect doesn't expose metadata out.
+        // Better: refactor to use a simpler openExternally call or accept that we might not have exact filename here immediately without re-fetch.
+        // But wait, openExternally re-decrypts anyway.
+        // Let's just use file.id as name if we can't get it easily, or re-read metadata.
+        
+        // Actually, best to just use the one provided by openExternally if we pass it correctly.
+        // But openExternally is global.
+        // Let's call vault.decryptMetadata again? It's cheap (header).
+        try {
+           final vault = ref.read(vaultServiceProvider);
+           final res = await vault.decryptMetadata(
+             file: file,
+             folderKey: folderKey,
+             trustedNow: trustedNow,
+           );
+           res.fold((l) {}, (meta) => fileName = meta.fileName);
+           
+           if (context.mounted) {
+             await openExternally(
+               context,
+               ref,
+               file,
+               folderKey,
+               fileName,
+             );
+           }
+        } catch (e) {
+           // Ignore
+        }
+      },
+    );
   }
 }
 
 class _VideoPlayerView extends StatefulWidget {
   final String filePath;
-  const _VideoPlayerView({required this.filePath});
+  final VoidCallback onOpenExternal;
+
+  const _VideoPlayerView({
+    required this.filePath,
+    required this.onOpenExternal,
+  });
+
   @override
   State<_VideoPlayerView> createState() => _VideoPlayerViewState();
 }
@@ -816,32 +921,95 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   late VideoPlayerController _controller;
   bool _initialized = false;
   String? _error;
+  bool _showControls = true;
+  Timer? _hideTimer;
+  bool _isLandscape = false;
+  bool _controlsLocked = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(File(widget.filePath))..initialize()
-        .then((_) {
-          if (mounted) {
-            setState(() {
-              _initialized = true;
-            });
-            _controller.play();
-          }
-        })
-        .catchError((error) {
-          if (mounted) {
-            setState(() {
-              _error = error.toString();
-            });
-          }
-        });
+    _controller = VideoPlayerController.file(File(widget.filePath))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() {
+            _initialized = true;
+          });
+          _controller.play();
+          _startHideTimer();
+        }
+      }).catchError((error) {
+        if (mounted) {
+          setState(() {
+            _error = error.toString();
+          });
+        }
+      });
+      
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _controller.dispose();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
     super.dispose();
+  }
+
+  void _toggleControls() {
+    setState(() {
+      _showControls = !_showControls;
+    });
+    if (_showControls) {
+      _startHideTimer();
+    } else {
+      _hideTimer?.cancel();
+    }
+  }
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _controller.value.isPlaying) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  void _skip(Duration duration) {
+    final newPos = _controller.value.position + duration;
+    _controller.seekTo(newPos);
+    _showControls = true;
+    _startHideTimer();
+  }
+
+  void _toggleLandscape() {
+    setState(() {
+      _isLandscape = !_isLandscape;
+    });
+    if (_isLandscape) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return "${d.inMinutes >= 60 ? '${d.inHours}:' : ''}$minutes:$seconds";
   }
 
   @override
@@ -861,53 +1029,160 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
       );
     }
 
-    return AspectRatio(
-      aspectRatio: _controller.value.aspectRatio,
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          VideoPlayer(_controller),
-          VideoProgressIndicator(
-            _controller,
-            allowScrubbing: true,
-            colors: VideoProgressColors(
-              playedColor: const Color(0xFFEF5350),
-              bufferedColor: Colors.white24,
-              backgroundColor: Colors.white10,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Center(
+               child: AspectRatio(
+                  aspectRatio: _controller.value.aspectRatio,
+                  child: VideoPlayer(_controller),
+               ),
             ),
-          ),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _controller.value.isPlaying
-                    ? _controller.pause()
-                    : _controller.play();
-              });
-            },
-            child: Container(
-              color: Colors.transparent,
-              child: Center(
-                child: AnimatedOpacity(
-                  opacity: _controller.value.isPlaying ? 0.0 : 1.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      shape: BoxShape.circle,
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      size: 48,
-                      color: Colors.white,
-                    ),
+            
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _toggleControls,
+              onDoubleTapDown: (details) {
+                final screenWidth = MediaQuery.of(context).size.width;
+                if (details.globalPosition.dx < screenWidth / 2) {
+                  _skip(const Duration(seconds: -10));
+                } else {
+                  _skip(const Duration(seconds: 10));
+                }
+              },
+              child: Container(
+                 color: Colors.transparent, 
+              ),
+            ),
+
+            if (_showControls)
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.black54, Colors.transparent, Colors.transparent, Colors.black54],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.2, 0.8, 1.0],
+                  ),
+                ),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                       Padding(
+                         padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                         child: Row(
+                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                           children: [
+                             IconButton(
+                               icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                               onPressed: () {
+                                 if (_isLandscape) {
+                                   _toggleLandscape();
+                                 } else {
+                                   Navigator.of(context).pop();
+                                 }
+                               },
+                             ),
+                             IconButton(
+                               icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                               tooltip: 'Open Externally',
+                               onPressed: widget.onOpenExternal,
+                             ),
+                           ],
+                         ),
+                       ),
+                       const Spacer(),
+                       
+                       Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                             IconButton(
+                            iconSize: 48,
+                            icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
+                            onPressed: () => _skip(const Duration(seconds: -10)),
+                          ),
+                          const SizedBox(width: 32),
+                          IconButton(
+                            iconSize: 64,
+                            icon: Icon(
+                              _controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                              color: Colors.white,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _controller.value.isPlaying ? _controller.pause() : _controller.play();
+                                _startHideTimer();
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 32),
+                          IconButton(
+                            iconSize: 48,
+                            icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
+                            onPressed: () => _skip(const Duration(seconds: 10)),
+                          ),
+                        ],
+                       ),
+                       
+                       const Spacer(),
+                       
+                       Padding(
+                         padding: const EdgeInsets.all(16.0),
+                         child: Column(
+                           mainAxisSize: MainAxisSize.min,
+                           children: [
+                             Row(
+                               children: [
+                                 Text(
+                                   _formatDuration(_controller.value.position),
+                                   style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                                 ),
+                                 Expanded(
+                                   child: SliderTheme(
+                                     data: SliderTheme.of(context).copyWith(
+                                       trackHeight: 2,
+                                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                                     ),
+                                     child: Slider(
+                                       value: _controller.value.position.inMilliseconds.toDouble().clamp(0.0, _controller.value.duration.inMilliseconds.toDouble()),
+                                       min: 0.0,
+                                       max: _controller.value.duration.inMilliseconds.toDouble(),
+                                       activeColor: Colors.redAccent,
+                                       inactiveColor: Colors.white24,
+                                       onChanged: (value) {
+                                          _controller.seekTo(Duration(milliseconds: value.toInt()));
+                                          _startHideTimer();
+                                       },
+                                     ),
+                                   ),
+                                 ),
+                                 Text(
+                                   _formatDuration(_controller.value.duration),
+                                   style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                                 ),
+                                 const SizedBox(width: 8),
+                                 IconButton(
+                                   icon: Icon(
+                                      _isLandscape ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                                      color: Colors.white,
+                                   ),
+                                   onPressed: _toggleLandscape,
+                                 ),
+                               ],
+                             ),
+                           ],
+                         ),
+                       ),
+                    ],
                   ),
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      }
     );
   }
 }

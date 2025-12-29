@@ -20,7 +20,7 @@ You can create multiple vaults to organize different types of files.
 ## 2. Creating a Secure Vault
 
 1. Open BlindKey.
-2. On the home screen, tap **Create Vault**.
+2. On the home screen, tap **New Vault**.
 3. Enter a name for your vault, such as:
    - Personal Files
    - Work Documents
