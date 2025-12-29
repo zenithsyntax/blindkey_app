@@ -276,16 +276,8 @@ class FolderViewPage extends HookConsumerWidget {
               const SliverPadding(
                 padding: EdgeInsets.only(bottom: 100),
               ), // Bottom spacing for FAB
-              // Banner Ad at bottom
-              SliverToBoxAdapter(
-                child: Container(
-                  color: const Color(0xFF0F0F0F),
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: BannerAdWidget(
-                    adUnitId: AdService.folderViewBannerAdId,
-                  ),
-                ),
-              ),
+              // Banner Ad moved to bottomNavigationBar
+
             ],
           ),
 
@@ -346,6 +338,15 @@ class FolderViewPage extends HookConsumerWidget {
               ),
             ),
         ],
+      ),
+      bottomNavigationBar: Container(
+        color: const Color(0xFF0F0F0F),
+        child: SafeArea(
+          top: false,
+          child: BannerAdWidget(
+            adUnitId: AdService.folderViewBannerAdId,
+          ),
+        ),
       ),
       floatingActionButton: uploadProgress.isNotEmpty || hasExpiredFiles
           ? null
