@@ -2,9 +2,11 @@ import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
+import 'package:blindkey_app/presentation/dialogs/terms_dialog.dart';
 import 'package:blindkey_app/presentation/pages/settings/security_settings_page.dart';
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/presentation/pages/folder_view_page.dart';
+import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -19,114 +21,134 @@ class HomePage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final foldersAsync = ref.watch(folderNotifierProvider);
+    final termsState = ref.watch(termsNotifierProvider);
+    final termsAccepted = termsState.valueOrNull ?? true; // Default to true while loading to avoid flash, or false? 
+    // Actually if loading, it defaults to null. If null, we assume valid until loaded?
+    // User wants it to POPUP. If it is not accepted, it should be false.
+    // If loading, AsyncValue.loading has no value.
+    // Let's assume false if we know for sure it's false.
+    // But if we default to true, it won't show. If default to false, it shows then hides.
+    // Ideally we wait for loading in main, BUT we moved to HomePage.
+    // Let's check: prefs is fast.
+    
+    final shouldShowTerms = !termsAccepted && !termsState.isLoading;
+
     final size = MediaQuery.of(context).size;
     final isTablet = size.width > 600;
     final isLargeScreen = size.width > 900;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
-      body: Stack(
-        children: [
-          // Subtle professional gradient background
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF141414),
-                    const Color(0xFF0F0F0F),
-                    const Color(0xFF0F0505), // Deep red tint at the bottom
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Noise texture overlay (responsive)
-          Positioned(
-            top: -size.height * 0.2, // Relative to screen height
-            left: -size.width * 0.2, // Relative to screen width
-            right: -size.width * 0.2,
-            height: size.height * 0.6,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.topCenter,
-                  radius: 1.5,
-                  colors: [
-                    const Color(
-                      0xFFE53935,
-                    ).withOpacity(0.08), // Professional Red Glint
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Main content
-          SafeArea(
-            child: Column(
-              children: [
-                // Custom header
-                _buildHeader(context, ref, isTablet, isLargeScreen),
-
-                // Content
-                Expanded(
-                  child: foldersAsync.when(
-                    data: (folders) {
-                      if (folders.isEmpty) {
-                        return _buildEmptyState(
-                          context,
-                          isTablet,
-                          isLargeScreen,
-                        );
-                      }
-                      return _buildVaultsList(
-                        context,
-                        ref,
-                        folders,
-                        isTablet,
-                        isLargeScreen,
-                      );
-                    },
-                    error: (e, s) => _buildErrorState(e.toString(), isTablet),
-                    loading: () => Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            'Loading Vaults...',
-                            style: GoogleFonts.inter(
-                              color: Colors.white54,
-                              fontSize: 14,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
+          body: Stack(
+            children: [
+              // Subtle professional gradient background
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF141414),
+                        const Color(0xFF0F0F0F),
+                        const Color(0xFF0F0505), // Deep red tint at the bottom
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+    
+              // Noise texture overlay (responsive)
+              Positioned(
+                top: -size.height * 0.2, // Relative to screen height
+                left: -size.width * 0.2, // Relative to screen width
+                right: -size.width * 0.2,
+                height: size.height * 0.6,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.topCenter,
+                      radius: 1.5,
+                      colors: [
+                        const Color(
+                          0xFFE53935,
+                        ).withOpacity(0.08), // Professional Red Glint
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+    
+              // Main content
+              SafeArea(
+                child: Column(
+                  children: [
+                    // Custom header
+                    _buildHeader(context, ref, isTablet, isLargeScreen),
+    
+                    // Content
+                    Expanded(
+                      child: foldersAsync.when(
+                        data: (folders) {
+                          if (folders.isEmpty) {
+                            return _buildEmptyState(
+                              context,
+                              isTablet,
+                              isLargeScreen,
+                            );
+                          }
+                          return _buildVaultsList(
+                            context,
+                            ref,
+                            folders,
+                            isTablet,
+                            isLargeScreen,
+                          );
+                        },
+                        error: (e, s) => _buildErrorState(e.toString(), isTablet),
+                        loading: () => Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                'Loading Vaults...',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      floatingActionButton: _buildModernFAB(context, isTablet),
+          floatingActionButton: _buildModernFAB(context, isTablet),
+        ),
+        
+        // Terms Overlay
+        if (shouldShowTerms)
+          const Positioned.fill(child: TermsDialog()),
+      ],
     );
   }
 
@@ -156,7 +178,7 @@ class HomePage extends HookConsumerWidget {
                     fit: BoxFit.contain,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 7),
                 Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

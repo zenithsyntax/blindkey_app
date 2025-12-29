@@ -1,4 +1,5 @@
 import 'package:blindkey_app/application/auth/app_lock_notifier.dart';
+import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
 import 'package:blindkey_app/presentation/pages/home_page.dart';
 import 'package:blindkey_app/presentation/theme/app_theme.dart';
@@ -22,10 +23,9 @@ class BlindKeyApp extends HookConsumerWidget {
        return null;
     }, []);
 
-    // Lifecycle listener removed to prevent locking on app switch.
-    // App will only lock on cold start via initialize().
-
     final isLocked = ref.watch(appLockNotifierProvider);
+    final termsState = ref.watch(termsNotifierProvider);
+    final hasAcceptedTerms = termsState.valueOrNull ?? false;
 
     return MaterialApp(
       title: 'BlindKey',
@@ -33,10 +33,15 @@ class BlindKeyApp extends HookConsumerWidget {
       theme: AppTheme.darkRedTheme,
       home: const HomePage(),
       builder: (context, child) {
+        // Only apply lock screen if terms are accepted (or if we want to lock before terms? usually after)
+        // Actually, if terms are NOT accepted, the HomePage shows the Terms Dialog overlay.
+        // We probably don't want the Lock Screen covering the Terms Dialog.
+        final showLock = isLocked && hasAcceptedTerms;
+        
         return Stack(
           children: [
             if (child != null) child,
-            if (isLocked)
+            if (showLock)
               const MaterialApp(
                 debugShowCheckedModeBanner: false,
                 home: AppLockScreen(),

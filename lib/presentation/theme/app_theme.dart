@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
+  static const Color primaryRed = Color(0xFFD32F2F);
+  static const Color darkGrey = Color(0xFF1E1E1E);
+
   static final ThemeData darkRedTheme = ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
