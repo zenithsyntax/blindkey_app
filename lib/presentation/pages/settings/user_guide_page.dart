@@ -24,6 +24,7 @@ class _UserGuidePageState extends State<UserGuidePage> {
       flags: YoutubePlayerFlags(
         autoPlay: widget.autoPlay,
         mute: false,
+        forceHD: true,
       ),
     );
   }
@@ -36,82 +37,87 @@ class _UserGuidePageState extends State<UserGuidePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        title: Text(
-          'User Guide',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 18),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
+    return YoutubePlayerBuilder(
+      player: YoutubePlayer(
+        controller: _controller,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: Colors.red,
+        progressColors: const ProgressBarColors(
+          playedColor: Colors.red,
+          handleColor: Colors.redAccent,
         ),
       ),
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          // Background
-           Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF141414),
-                    const Color(0xFF0F0F0F),
-                    const Color(0xFF0F0505),
-                  ],
-                ),
-              ),
+      builder: (context, player) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF0F0F0F),
+          appBar: AppBar(
+            title: Text(
+              'User Guide',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 18),
+            ),
+            centerTitle: true,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ),
-          
-          SafeArea(
-            child: Column(
-              children: [
-                // Video Player
-                if (_controller.initialVideoId.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: YoutubePlayer(
-                        controller: _controller,
-                        showVideoProgressIndicator: true,
-                        progressIndicatorColor: Colors.red,
-                        progressColors: const ProgressBarColors(
-                          playedColor: Colors.red,
-                          handleColor: Colors.redAccent,
+          extendBodyBehindAppBar: true,
+          body: Stack(
+            children: [
+              // Background
+               Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF141414),
+                        const Color(0xFF0F0F0F),
+                        const Color(0xFF0F0505),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              SafeArea(
+                child: Column(
+                  children: [
+                    // Video Player
+                    if (_controller.initialVideoId.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: player,
+                        ),
+                      ),
+
+                    // Text Content
+                    Expanded(
+                      child: Markdown(
+                        data: userGuideData,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        styleSheet: MarkdownStyleSheet(
+                          h1: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                          h2: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 2),
+                          h3: GoogleFonts.inter(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                          p: GoogleFonts.inter(color: Colors.white70, fontSize: 14, height: 1.5),
+                          listBullet: GoogleFonts.inter(color: Colors.white70),
+                          strong: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
-                  ),
-
-                // Text Content
-                Expanded(
-                  child: Markdown(
-                    data: userGuideData,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    styleSheet: MarkdownStyleSheet(
-                      h1: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                      h2: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 2),
-                      h3: GoogleFonts.inter(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                      p: GoogleFonts.inter(color: Colors.white70, fontSize: 14, height: 1.5),
-                      listBullet: GoogleFonts.inter(color: Colors.white70),
-                      strong: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

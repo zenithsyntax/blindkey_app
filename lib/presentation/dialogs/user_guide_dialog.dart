@@ -26,6 +26,7 @@ class _UserGuideDialogState extends State<UserGuideDialog> {
         autoPlay: false,
         mute: false,
         enableCaption: false,
+        forceHD: true,
       ),
     );
   }
