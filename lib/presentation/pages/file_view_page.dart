@@ -179,13 +179,7 @@ class FileViewPage extends HookConsumerWidget {
       extendBodyBehindAppBar: true,
       appBar: isVideo ? null : AppBar(
         centerTitle: true,
-        backgroundColor: Colors.black.withOpacity(0.5),
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
