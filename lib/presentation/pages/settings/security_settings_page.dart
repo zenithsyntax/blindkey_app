@@ -269,40 +269,83 @@ class SecuritySettingsPage extends HookConsumerWidget {
 
   Future<String?> _showSetPinDialog(BuildContext context) async {
      String pin = '';
+     String confirmPin = '';
+     
      return showDialog<String>(
        context: context,
        barrierDismissible: false,
        builder: (context) {
-         return _buildGlassDialog(
-           title: 'Set PIN',
-           content: TextField(
-             keyboardType: TextInputType.number,
-             maxLength: 4,
-             obscureText: true,
-             onChanged: (v) => pin = v,
-             style: GoogleFonts.inter(color: Colors.white),
-             decoration: InputDecoration(
-               labelText: 'Enter 4-digit PIN',
-               labelStyle: GoogleFonts.inter(color: Colors.white54),
-               enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-               focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
-               counterStyle: GoogleFonts.inter(color: Colors.white24),
-             ),
-           ),
-           actions: [
-             TextButton(
-               onPressed: () => Navigator.pop(context), 
-               child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white54)),
-             ),
-             TextButton(
-               onPressed: () {
-                 if (pin.length == 4) {
-                   Navigator.pop(context, pin);
-                 }
-               }, 
-               child: Text('Save', style: GoogleFonts.inter(color: const Color(0xFFEF5350))),
-             ),
-           ],
+         String? errorText;
+         
+         return StatefulBuilder(
+           builder: (context, setState) {
+             return _buildGlassDialog(
+               title: 'Set PIN',
+               content: Column(
+                 mainAxisSize: MainAxisSize.min,
+                 children: [
+                   TextField(
+                     keyboardType: TextInputType.number,
+                     maxLength: 4,
+                     obscureText: true,
+                     onChanged: (v) {
+                       pin = v;
+                       if (errorText != null) setState(() => errorText = null);
+                     },
+                     style: GoogleFonts.inter(color: Colors.white),
+                     decoration: InputDecoration(
+                       labelText: 'Enter 4-digit PIN',
+                       labelStyle: GoogleFonts.inter(color: Colors.white54),
+                       enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                       focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                       counterStyle: GoogleFonts.inter(color: Colors.white24),
+                     ),
+                   ),
+                   const SizedBox(height: 16),
+                   TextField(
+                     keyboardType: TextInputType.number,
+                     maxLength: 4,
+                     obscureText: true,
+                     onChanged: (v) {
+                       confirmPin = v;
+                       if (errorText != null) setState(() => errorText = null);
+                     },
+                     style: GoogleFonts.inter(color: Colors.white),
+                     decoration: InputDecoration(
+                       labelText: 'Confirm PIN',
+                       labelStyle: GoogleFonts.inter(color: Colors.white54),
+                       errorText: errorText,
+                       errorStyle: GoogleFonts.inter(color: Colors.redAccent),
+                       enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                       focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                       counterStyle: GoogleFonts.inter(color: Colors.white24),
+                     ),
+                   ),
+                 ],
+               ),
+               actions: [
+                 TextButton(
+                   onPressed: () => Navigator.pop(context), 
+                   child: Text('Cancel', style: GoogleFonts.inter(color: Colors.white54)),
+                 ),
+                 TextButton(
+                   onPressed: () {
+                     if (pin.length != 4) {
+                        setState(() => errorText = 'PIN must be 4 digits');
+                        return;
+                     }
+                     
+                     if (pin != confirmPin) {
+                       setState(() => errorText = 'PINs do not match');
+                     } else {
+                       Navigator.pop(context, pin);
+                     }
+                   }, 
+                   child: Text('Save', style: GoogleFonts.inter(color: const Color(0xFFEF5350))),
+                 ),
+               ],
+             );
+           }
          );
        },
      );
@@ -384,7 +427,9 @@ class SecuritySettingsPage extends HookConsumerWidget {
         side: BorderSide(color: Colors.white.withOpacity(0.08)),
       ),
       title: Text(title, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-      content: content,
+      content: SingleChildScrollView(
+        child: content,
+      ),
       actions: actions,
     );
   }

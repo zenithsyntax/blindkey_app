@@ -10,7 +10,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import 'package:flutter_windowmanager/flutter_windowmanager.dart';
+import 'package:screen_protector/screen_protector.dart';
 import 'package:safe_device/safe_device.dart';
 import 'dart:io';
 
@@ -29,7 +29,7 @@ void main() async {
   // Only available on Android. iOS handles this differently (usually via specific event listeners or blanking screens).
   if (Platform.isAndroid) {
     try {
-      await FlutterWindowManager.addFlags(FlutterWindowManager.FLAG_SECURE);
+      await ScreenProtector.protectDataLeakageOn();
     } catch (e) {
       debugPrint('Specific security flag failed: $e');
     }
