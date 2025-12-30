@@ -18,6 +18,8 @@
         android:label="BlindKey"
         android:name="${applicationName}"
         android:requestLegacyExternalStorage="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:icon="@mipmap/launcher_icon">
         <activity
             android:name=".MainActivity"
