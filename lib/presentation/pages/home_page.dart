@@ -183,12 +183,12 @@ class HomePage extends HookConsumerWidget {
                   padding: const EdgeInsets.all(2),
                   child: Image.asset(
                     'assets/blindkey_logo.png',
-                    width: isLargeScreen ? 56 : 50,
-                    height: isLargeScreen ? 56 : 50,
+                    width: isLargeScreen ? 60 : 54,
+                    height: isLargeScreen ? 60 : 54,
                     fit: BoxFit.contain,
                   ),
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(width: 2),
                 Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
