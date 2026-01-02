@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
@@ -179,6 +180,71 @@ class FileViewPage extends HookConsumerWidget {
         fileDetails.hasData &&
         (fileDetails.data!.mimeType.startsWith('image/'));
 
+    // Track if ad is loaded for conditional padding
+    final isAdLoaded = useState<bool>(false);
+
+    // Track system UI visibility (status bar and navigation bar)
+    // Start with UI hidden (fullscreen mode)
+    final showSystemUI = useState<bool>(false);
+
+    // Hide/show system UI based on state
+    useEffect(() {
+      // Initially hide system UI
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+        overlays: [],
+      );
+
+      // Update system UI when showSystemUI changes
+      void updateSystemUI() {
+        if (showSystemUI.value) {
+          // Show system UI
+          SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.edgeToEdge,
+            overlays: SystemUiOverlay.values,
+          );
+        } else {
+          // Hide system UI (status bar and navigation bar)
+          SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.immersiveSticky,
+            overlays: [],
+          );
+        }
+      }
+
+      // Initial update
+      updateSystemUI();
+
+      // Listen to showSystemUI changes
+      // Note: Since useState doesn't have a listener, we'll handle it in the tap handler
+
+      return () {
+        // Restore when leaving page
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: SystemUiOverlay.values,
+        );
+      };
+    }, []);
+
+    // Update system UI when showSystemUI changes
+    useEffect(() {
+      if (showSystemUI.value) {
+        // Show system UI
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: SystemUiOverlay.values,
+        );
+      } else {
+        // Hide system UI (status bar and navigation bar)
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.immersiveSticky,
+          overlays: [],
+        );
+      }
+      return () {}; // Return empty dispose function
+    }, [showSystemUI.value]);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
       extendBodyBehindAppBar: true,
@@ -286,157 +352,316 @@ class FileViewPage extends HookConsumerWidget {
                   ),
               ],
             ),
-      body: Stack(
-        children: [
-          // Background
-          Positioned.fill(child: Container(color: const Color(0xFF0F0F0F))),
+      body: OrientationBuilder(
+        builder: (context, orientation) {
+          final isLandscape = orientation == Orientation.landscape;
+          final mediaQuery = MediaQuery.of(context);
+          final screenWidth = mediaQuery.size.width;
+          final screenHeight = mediaQuery.size.height;
+          final aspectRatio = screenWidth / screenHeight;
 
-          SafeArea(
-            child: fileDetails.hasError
-                ? Center(
-                    child: Text(
-                      'Error: ${fileDetails.error}',
-                      style: GoogleFonts.inter(color: Colors.red),
+          // Calculate responsive ad width based on screen size and aspect ratio
+          // For landscape: ad is rotated, so we need width for vertical banner
+          // Standard banner is 320x50, when rotated becomes 50x320
+          double adWidth = 0.0;
+          if (isLandscape && isAdLoaded.value) {
+            // Determine device category based on screen width
+            final isSmallPhone = screenWidth < 400;
+            final isRegularPhone = screenWidth >= 400 && screenWidth < 600;
+            final isLargePhone = screenWidth >= 600 && screenWidth < 900;
+            final isTablet = screenWidth >= 900 && screenWidth < 1200;
+
+            // Adjust percentage based on device type and aspect ratio
+            double percentage;
+            double minWidth;
+            double maxWidth;
+
+            if (isSmallPhone) {
+              // Small phones: 7-9% depending on aspect ratio
+              percentage = aspectRatio > 2.0 ? 0.07 : 0.08;
+              minWidth = 45.0;
+              maxWidth = 65.0;
+            } else if (isRegularPhone) {
+              // Regular phones: 8-10% depending on aspect ratio
+              percentage = aspectRatio > 2.0 ? 0.08 : 0.09;
+              minWidth = 50.0;
+              maxWidth = 75.0;
+            } else if (isLargePhone) {
+              // Large phones: 9-11%
+              percentage = aspectRatio > 2.0 ? 0.09 : 0.10;
+              minWidth = 55.0;
+              maxWidth = 85.0;
+            } else if (isTablet) {
+              // Tablets: 10-12%
+              percentage = aspectRatio > 1.8 ? 0.10 : 0.11;
+              minWidth = 60.0;
+              maxWidth = 100.0;
+            } else {
+              // Large tablets: 11-13%
+              percentage = aspectRatio > 1.8 ? 0.11 : 0.12;
+              minWidth = 70.0;
+              maxWidth = 120.0;
+            }
+
+            adWidth = (screenWidth * percentage).clamp(minWidth, maxWidth);
+          }
+
+          return GestureDetector(
+            // Tap to toggle system UI visibility
+            onTap: () {
+              showSystemUI.value = !showSystemUI.value;
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Stack(
+              children: [
+                // Background
+                Positioned.fill(
+                  child: Container(color: const Color(0xFF0F0F0F)),
+                ),
+
+                SafeArea(
+                  child: Padding(
+                    // Add right padding in landscape only if ad is loaded
+                    padding: EdgeInsets.only(
+                      right: (isLandscape && isAdLoaded.value) ? adWidth : 0.0,
                     ),
-                  )
-                : !fileDetails.hasData
-                    ? Center(
-                        child: SizedBox(
-                          width: 200,
-                          child: LinearProgressIndicator(
-                            color: Colors.white30,
-                            backgroundColor: Colors.white10,
-                          ),
-                        ),
-                      )
-                  : Material(
-                        type: MaterialType.transparency,
-                        child: isVideo
-                            ? _VideoView(
-                                file: file,
-                                folderKey: folderKey,
-                                fileSize: fileDetails.data!.size,
-                                trustedNow: trustedTimeSnapshot.data,
-                              )
-                            : (fileDetails.data!.mimeType.startsWith(
-                                    'image/svg',
+                    child: fileDetails.hasError
+                        ? Center(
+                            child: Text(
+                              'Error: ${fileDetails.error}',
+                              style: GoogleFonts.inter(color: Colors.red),
+                            ),
+                          )
+                        : !fileDetails.hasData
+                        ? Center(
+                            child: SizedBox(
+                              width: 200,
+                              child: LinearProgressIndicator(
+                                color: Colors.white30,
+                                backgroundColor: Colors.white10,
+                              ),
+                            ),
+                          )
+                        : Material(
+                            type: MaterialType.transparency,
+                            child: isVideo
+                                ? _VideoView(
+                                    file: file,
+                                    folderKey: folderKey,
+                                    fileSize: fileDetails.data!.size,
+                                    trustedNow: trustedTimeSnapshot.data,
+                                    isAdLoaded: isAdLoaded.value,
                                   )
-                                  ? _SvgView(
-                                      file: file,
-                                      folderKey: folderKey,
-                                      fileSize: fileDetails.data!.size,
-                                      trustedNow: trustedTimeSnapshot.data,
-                                    )
-                                  : (fileDetails.data!.mimeType.startsWith(
-                                          'image/',
+                                : (fileDetails.data!.mimeType.startsWith(
+                                        'image/svg',
+                                      )
+                                      ? _SvgView(
+                                          file: file,
+                                          folderKey: folderKey,
+                                          fileSize: fileDetails.data!.size,
+                                          trustedNow: trustedTimeSnapshot.data,
                                         )
-                                        ? _ImageView(
-                                            file: file,
-                                            folderKey: folderKey,
-                                            fileSize: fileDetails.data!.size,
-                                            trustedNow:
-                                                trustedTimeSnapshot.data,
-                                          )
-                                        : (fileDetails.data!.mimeType
-                                                  .startsWith('text/')
-                                              ? _TextView(
-                                                  file: file,
-                                                  folderKey: folderKey,
-                                                  fileSize:
-                                                      fileDetails.data!.size,
-                                                  trustedNow:
-                                                      trustedTimeSnapshot.data,
-                                                )
-                                              : (fileDetails.data!.mimeType ==
-                                                        'application/pdf'
-                                                    ? _PdfView(
-                                                        file: file,
-                                                        folderKey: folderKey,
-                                                        fileSize: fileDetails
-                                                            .data!
-                                                            .size,
-                                                        trustedNow:
-                                                            trustedTimeSnapshot
-                                                                .data,
-                                                      )
-                                                    : (fileDetails.data!.mimeType.contains(
-                                                                'excel',
-                                                              ) ||
-                                                              fileDetails
-                                                                  .data!
-                                                                  .mimeType
-                                                                  .contains(
-                                                                    'spreadsheet',
-                                                                  )
-                                                          ? _ExcelView(
-                                                              file: file,
-                                                              folderKey:
-                                                                  folderKey,
-                                                              fileSize:
+                                      : (fileDetails.data!.mimeType.startsWith(
+                                              'image/',
+                                            )
+                                            ? _ImageView(
+                                                file: file,
+                                                folderKey: folderKey,
+                                                fileSize:
+                                                    fileDetails.data!.size,
+                                                trustedNow:
+                                                    trustedTimeSnapshot.data,
+                                              )
+                                            : (fileDetails.data!.mimeType
+                                                      .startsWith('text/')
+                                                  ? _TextView(
+                                                      file: file,
+                                                      folderKey: folderKey,
+                                                      fileSize: fileDetails
+                                                          .data!
+                                                          .size,
+                                                      trustedNow:
+                                                          trustedTimeSnapshot
+                                                              .data,
+                                                    )
+                                                  : (fileDetails.data!.mimeType ==
+                                                            'application/pdf'
+                                                        ? _PdfView(
+                                                            file: file,
+                                                            folderKey:
+                                                                folderKey,
+                                                            fileSize:
+                                                                fileDetails
+                                                                    .data!
+                                                                    .size,
+                                                            trustedNow:
+                                                                trustedTimeSnapshot
+                                                                    .data,
+                                                          )
+                                                        : (fileDetails
+                                                                      .data!
+                                                                      .mimeType
+                                                                      .contains(
+                                                                        'excel',
+                                                                      ) ||
                                                                   fileDetails
                                                                       .data!
-                                                                      .size,
-                                                              trustedNow:
-                                                                  trustedTimeSnapshot
-                                                                      .data,
-                                                            )
-                                                          : (fileDetails
-                                                                        .data!
-                                                                        .mimeType
-                                                                        .contains(
+                                                                      .mimeType
+                                                                      .contains(
+                                                                        'spreadsheet',
+                                                                      )
+                                                              ? _ExcelView(
+                                                                  file: file,
+                                                                  folderKey:
+                                                                      folderKey,
+                                                                  fileSize:
+                                                                      fileDetails
+                                                                          .data!
+                                                                          .size,
+                                                                  trustedNow:
+                                                                      trustedTimeSnapshot
+                                                                          .data,
+                                                                )
+                                                              : (fileDetails.data!.mimeType.contains(
                                                                           'word',
                                                                         ) ||
-                                                                    fileDetails
-                                                                        .data!
-                                                                        .mimeType
-                                                                        .contains('document')
-                                                                ? _UnsupportedFileView(
-                                                                    file: file,
-                                                                    folderKey:
-                                                                        folderKey,
-                                                                    fileName: fileDetails
-                                                                        .data!
-                                                                        .fileName,
-                                                                  )
-                                                                : (fileDetails.data!.mimeType.contains('presentation') ||
-                                                                          fileDetails.data!.mimeType.contains('powerpoint')
-                                                                      ? _UnsupportedFileView(
-                                                                          file:
-                                                                              file,
-                                                                          folderKey:
-                                                                              folderKey,
-                                                                          fileName: fileDetails
-                                                                              .data!
-                                                                              .fileName,
-                                                                        )
-                                                                      : (fileDetails.data!.mimeType.startsWith('audio/')
-                                                                            ? _AudioView(
-                                                                                file: file,
-                                                                                folderKey: folderKey,
-                                                                                fileSize: fileDetails.data!.size,
-                                                                                trustedNow: trustedTimeSnapshot.data,
-                                                                              )
-                                                                            : _UnsupportedFileView(
-                                                                                file: file,
-                                                                                folderKey: folderKey,
-                                                                                fileName: fileDetails.data!.fileName,
-                                                                              ))))))))),
-                      ),
-          ),
-        ],
+                                                                        fileDetails
+                                                                            .data!
+                                                                            .mimeType
+                                                                            .contains('document')
+                                                                    ? _UnsupportedFileView(
+                                                                        file:
+                                                                            file,
+                                                                        folderKey:
+                                                                            folderKey,
+                                                                        fileName: fileDetails
+                                                                            .data!
+                                                                            .fileName,
+                                                                      )
+                                                                    : (fileDetails.data!.mimeType.contains('presentation') ||
+                                                                              fileDetails.data!.mimeType.contains('powerpoint')
+                                                                          ? _UnsupportedFileView(
+                                                                              file: file,
+                                                                              folderKey: folderKey,
+                                                                              fileName: fileDetails.data!.fileName,
+                                                                            )
+                                                                          : (fileDetails.data!.mimeType.startsWith('audio/')
+                                                                                ? _AudioView(
+                                                                                    file: file,
+                                                                                    folderKey: folderKey,
+                                                                                    fileSize: fileDetails.data!.size,
+                                                                                    trustedNow: trustedTimeSnapshot.data,
+                                                                                  )
+                                                                                : _UnsupportedFileView(
+                                                                                    file: file,
+                                                                                    folderKey: folderKey,
+                                                                                    fileName: fileDetails.data!.fileName,
+                                                                                  ))))))))),
+                          ),
+                  ),
+                ),
+
+                // Banner Ad - positioned based on orientation
+                if (isLandscape && isAdLoaded.value)
+                  // Landscape: Position on the right side to maintain same relative position as portrait bottom
+                  Builder(
+                    builder: (context) {
+                      final mediaQuery = MediaQuery.of(context);
+                      final screenWidth = mediaQuery.size.width;
+                      final screenHeight = mediaQuery.size.height;
+                      final aspectRatio = screenWidth / screenHeight;
+
+                      // Calculate responsive ad width based on screen size and aspect ratio
+                      double percentage;
+                      double minWidth;
+                      double maxWidth;
+
+                      if (screenWidth < 400) {
+                        // Small phones
+                        percentage = aspectRatio > 2.0 ? 0.07 : 0.08;
+                        minWidth = 45.0;
+                        maxWidth = 65.0;
+                      } else if (screenWidth < 600) {
+                        // Regular phones
+                        percentage = aspectRatio > 2.0 ? 0.08 : 0.09;
+                        minWidth = 50.0;
+                        maxWidth = 75.0;
+                      } else if (screenWidth < 900) {
+                        // Large phones
+                        percentage = aspectRatio > 2.0 ? 0.09 : 0.10;
+                        minWidth = 55.0;
+                        maxWidth = 85.0;
+                      } else if (screenWidth < 1200) {
+                        // Tablets
+                        percentage = aspectRatio > 1.8 ? 0.10 : 0.11;
+                        minWidth = 60.0;
+                        maxWidth = 100.0;
+                      } else {
+                        // Large tablets
+                        percentage = aspectRatio > 1.8 ? 0.11 : 0.12;
+                        minWidth = 70.0;
+                        maxWidth = 120.0;
+                      }
+
+                      final calculatedWidth = (screenWidth * percentage).clamp(
+                        minWidth,
+                        maxWidth,
+                      );
+
+                      return Positioned(
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: SafeArea(
+                          child: Container(
+                            color: const Color(0xFF0F0F0F),
+                            width: calculatedWidth, // Responsive width
+                            alignment: Alignment.center,
+                            child: RotatedBox(
+                              quarterTurns:
+                                  1, // Rotate 90 degrees to show vertically
+                              child: BannerAdWidget(
+                                adUnitId: AdService.fileViewBannerAdId,
+                                adSize: AdSize.banner,
+                                onAdLoadedChanged: (loaded) {
+                                  isAdLoaded.value = loaded;
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          );
+        },
       ),
-      bottomNavigationBar: Container(
-        color: const Color(0xFF0F0F0F),
-        child: SafeArea(
-          top: false,
-          child: BannerAdWidget(
-            adUnitId: AdService.fileViewBannerAdId,
-          ),
-        ),
+      bottomNavigationBar: OrientationBuilder(
+        builder: (context, orientation) {
+          // Only show bottom ad in portrait mode
+          if (orientation == Orientation.landscape) {
+            return const SizedBox.shrink();
+          }
+
+          return Container(
+            color: const Color(0xFF0F0F0F),
+            child: SafeArea(
+              top: false,
+              child: BannerAdWidget(
+                adUnitId: AdService.fileViewBannerAdId,
+                onAdLoadedChanged: (loaded) {
+                  isAdLoaded.value = loaded;
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }
- 
+
   Widget _buildFileView(
     FileModel file,
     SecretKey folderKey,
@@ -450,6 +675,7 @@ class FileViewPage extends HookConsumerWidget {
         folderKey: folderKey,
         fileSize: meta.size,
         trustedNow: trustedNow,
+        isAdLoaded: false, // This method is unused, default to false
       );
     }
 
@@ -1017,12 +1243,14 @@ class _VideoView extends HookConsumerWidget {
   final SecretKey folderKey;
   final int fileSize;
   final DateTime? trustedNow;
+  final bool isAdLoaded;
 
   const _VideoView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
     this.trustedNow,
+    required this.isAdLoaded,
   });
 
   @override
@@ -1118,6 +1346,7 @@ class _VideoView extends HookConsumerWidget {
 
     return _VideoPlayerView(
       filePath: videoPath.value!,
+      isAdLoaded: isAdLoaded,
       onOpenExternal: () async {
         final confirm = await showDialog<bool>(
           context: context,
@@ -1208,10 +1437,12 @@ class _VideoView extends HookConsumerWidget {
 class _VideoPlayerView extends StatefulWidget {
   final String filePath;
   final VoidCallback onOpenExternal;
+  final bool isAdLoaded;
 
   const _VideoPlayerView({
     required this.filePath,
     required this.onOpenExternal,
+    required this.isAdLoaded,
   });
 
   @override
@@ -1328,6 +1559,55 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
       );
     }
 
+    // Check actual device orientation
+    final isDeviceLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    // Only show padding if ad is actually loaded
+    final shouldShowAdPadding =
+        (isDeviceLandscape || _isLandscape) && widget.isAdLoaded;
+
+    // Calculate responsive padding based on screen size and aspect ratio
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final screenHeight = mediaQuery.size.height;
+    final aspectRatio = screenWidth / screenHeight;
+
+    double adWidth = 0.0;
+    if (shouldShowAdPadding) {
+      double percentage;
+      double minWidth;
+      double maxWidth;
+
+      if (screenWidth < 400) {
+        // Small phones
+        percentage = aspectRatio > 2.0 ? 0.07 : 0.08;
+        minWidth = 45.0;
+        maxWidth = 65.0;
+      } else if (screenWidth < 600) {
+        // Regular phones
+        percentage = aspectRatio > 2.0 ? 0.08 : 0.09;
+        minWidth = 50.0;
+        maxWidth = 75.0;
+      } else if (screenWidth < 900) {
+        // Large phones
+        percentage = aspectRatio > 2.0 ? 0.09 : 0.10;
+        minWidth = 55.0;
+        maxWidth = 85.0;
+      } else if (screenWidth < 1200) {
+        // Tablets
+        percentage = aspectRatio > 1.8 ? 0.10 : 0.11;
+        minWidth = 60.0;
+        maxWidth = 100.0;
+      } else {
+        // Large tablets
+        percentage = aspectRatio > 1.8 ? 0.11 : 0.12;
+        minWidth = 70.0;
+        maxWidth = 120.0;
+      }
+
+      adWidth = (screenWidth * percentage).clamp(minWidth, maxWidth);
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return Stack(
@@ -1373,9 +1653,13 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8.0,
-                          vertical: 8.0,
+                        padding: EdgeInsets.only(
+                          left: 8.0,
+                          right: shouldShowAdPadding
+                              ? adWidth + 8.0
+                              : 8.0, // Add responsive padding for ad in landscape
+                          top: 8.0,
+                          bottom: 8.0,
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1451,7 +1735,14 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
                       const Spacer(),
 
                       Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: EdgeInsets.only(
+                          left: 16.0,
+                          right: shouldShowAdPadding
+                              ? adWidth + 16.0
+                              : 16.0, // Add responsive padding for ad in landscape
+                          top: 16.0,
+                          bottom: 16.0,
+                        ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1634,11 +1925,11 @@ class _PdfView extends HookConsumerWidget {
     final pdfPath = useState<String?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
-    
+
     // pdfrx Controllers
     final pdfController = useMemoized(() => PdfViewerController());
     final textSearcher = useMemoized(() => PdfTextSearcher(pdfController));
-    
+
     // UI State
     final documentLoaded = useState(false);
     final totalPages = useState(0);
@@ -1656,6 +1947,7 @@ class _PdfView extends HookConsumerWidget {
         matchCount.value = textSearcher.matches.length;
         currentMatchIndex.value = (textSearcher.currentIndex ?? -1) + 1;
       }
+
       textSearcher.addListener(onMatchesChanged);
       return () => textSearcher.removeListener(onMatchesChanged);
     }, [textSearcher]);
@@ -1672,7 +1964,9 @@ class _PdfView extends HookConsumerWidget {
           final tempFile = File(tempPath!);
 
           if (tempFile.existsSync()) {
-            try { tempFile.deleteSync(); } catch (_) {}
+            try {
+              tempFile.deleteSync();
+            } catch (_) {}
           }
 
           final sink = tempFile.openWrite();
@@ -1713,7 +2007,10 @@ class _PdfView extends HookConsumerWidget {
         isCancelled = true;
         if (tempPath != null) {
           final f = File(tempPath!);
-          if (f.existsSync()) try { f.deleteSync(); } catch (_) {}
+          if (f.existsSync())
+            try {
+              f.deleteSync();
+            } catch (_) {}
         }
       };
     }, []);
@@ -1733,7 +2030,11 @@ class _PdfView extends HookConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+              const Icon(
+                Icons.error_outline,
+                color: Colors.redAccent,
+                size: 48,
+              ),
               const SizedBox(height: 16),
               Text(
                 'Error loading PDF',
@@ -1765,29 +2066,29 @@ class _PdfView extends HookConsumerWidget {
                 currentPage.value = pageNumber ?? 1;
               },
               viewerOverlayBuilder: (context, size, handleLinkTap) => [
-                 PdfViewerScrollThumb(
-                    controller: pdfController,
-                    orientation: ScrollbarOrientation.right,
-                    thumbSize: const Size(40, 25),
-                    thumbBuilder: (context, thumbSize, pageNumber, controller) =>
-                        Container(
-                          color: Colors.black54,
-                          child: Center(
-                            child: Text(
-                              pageNumber.toString(),
-                              style: const TextStyle(color: Colors.white),
-                            ),
+                PdfViewerScrollThumb(
+                  controller: pdfController,
+                  orientation: ScrollbarOrientation.right,
+                  thumbSize: const Size(40, 25),
+                  thumbBuilder: (context, thumbSize, pageNumber, controller) =>
+                      Container(
+                        color: Colors.black54,
+                        child: Center(
+                          child: Text(
+                            pageNumber.toString(),
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ),
-                  ),
-              ], 
+                      ),
+                ),
+              ],
             ),
           ),
-          
+
         if (!documentLoaded.value)
           Container(
-             color: const Color(0xFF0F0F0F),
-             child: _LoadingProgressView(progress: progress.value),
+            color: const Color(0xFF0F0F0F),
+            child: _LoadingProgressView(progress: progress.value),
           ),
 
         // Page Status
@@ -1798,7 +2099,10 @@ class _PdfView extends HookConsumerWidget {
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black87,
                   borderRadius: BorderRadius.circular(20),
@@ -1838,17 +2142,26 @@ class _PdfView extends HookConsumerWidget {
                           hintText: 'Find in document...',
                           hintStyle: GoogleFonts.inter(color: Colors.white38),
                           border: InputBorder.none,
-                          prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.white54,
+                          ),
                         ),
                         onSubmitted: (_) => performSearch(),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_up,
+                        color: Colors.white,
+                      ),
                       onPressed: () => textSearcher.goToPrevMatch(),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Colors.white,
+                      ),
                       onPressed: () => textSearcher.goToNextMatch(),
                     ),
                     IconButton(
@@ -1884,29 +2197,28 @@ class _PdfView extends HookConsumerWidget {
               ),
             ),
           ),
-          
+
         // Search Result Count
         if (documentLoaded.value && showSearch.value && matchCount.value > 0)
           Positioned(
-             top: 60 + MediaQuery.of(context).padding.top,
-             right: 16,
-             child: Container(
-               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-               decoration: BoxDecoration(
-                 color: Colors.black87,
-                 borderRadius: BorderRadius.circular(12),
-               ),
-               child: Text(
-                 '${currentMatchIndex.value} of ${matchCount.value}',
-                 style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
-               ),
-             ),
+            top: 60 + MediaQuery.of(context).padding.top,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${currentMatchIndex.value} of ${matchCount.value}',
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+              ),
+            ),
           ),
       ],
     );
   }
 }
-
 
 class _AudioView extends HookConsumerWidget {
   final FileModel file;

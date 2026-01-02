@@ -4,11 +4,13 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 class BannerAdWidget extends StatefulWidget {
   final String adUnitId;
   final AdSize adSize;
+  final ValueChanged<bool>? onAdLoadedChanged;
 
   const BannerAdWidget({
     super.key,
     required this.adUnitId,
     this.adSize = AdSize.banner,
+    this.onAdLoadedChanged,
   });
 
   @override
@@ -35,10 +37,12 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
           setState(() {
             _isAdLoaded = true;
           });
+          widget.onAdLoadedChanged?.call(true);
         },
         onAdFailedToLoad: (ad, error) {
           ad.dispose();
           _isAdLoaded = false;
+          widget.onAdLoadedChanged?.call(false);
           // Retry after delay
           Future.delayed(const Duration(seconds: 5), () {
             if (mounted) _loadAd();
