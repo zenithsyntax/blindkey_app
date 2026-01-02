@@ -87,68 +87,68 @@ class HomePage extends HookConsumerWidget {
               // Main content
               SafeArea(
                 child: Column(
-                  children: [
-                    // Custom header
-                    _buildHeader(context, ref, isTablet, isLargeScreen),
-    
-                    // Content
-                    Expanded(
-                      child: foldersAsync.when(
-                        data: (folders) {
-                          if (folders.isEmpty) {
-                            return _buildEmptyState(
-                              context,
-                              isTablet,
-                              isLargeScreen,
-                            );
-                          }
-                          return _buildVaultsList(
-                            context,
-                            ref,
-                            folders,
-                            isTablet,
-                            isLargeScreen,
-                          );
-                        },
-                        error: (e, s) => _buildErrorState(e.toString(), isTablet),
-                        loading: () => Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(24.0),
-                                child: SizedBox(
-                                  width: 32,
-                                  height: 32,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
+                      children: [
+                        // Custom header - with responsive padding
+                        _buildHeader(context, ref, isTablet, isLargeScreen),
+                        
+                        // Content - flexible to prevent overflow
+                        Expanded(
+                          child: foldersAsync.when(
+                            data: (folders) {
+                              if (folders.isEmpty) {
+                                return _buildEmptyState(
+                                  context,
+                                  isTablet,
+                                  isLargeScreen,
+                                );
+                              }
+                              return _buildVaultsList(
+                                context,
+                                ref,
+                                folders,
+                                isTablet,
+                                isLargeScreen,
+                              );
+                            },
+                            error: (e, s) => _buildErrorState(e.toString(), isTablet),
+                            loading: () => Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  Text(
+                                    'Loading Vaults...',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white54,
+                                      fontSize: 14,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                'Loading Vaults...',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white54,
-                                  fontSize: 14,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
+                        
+                        // Banner Ad at bottom
+                        Container(
+                          color: const Color(0xFF0F0F0F),
+                          child: BannerAdWidget(
+                            adUnitId: AdService.homeBannerAdId,
+                          ),
+                        ),
+                      ],
                     ),
-                    
-                    // Banner Ad at bottom
-                    Container(
-                      color: const Color(0xFF0F0F0F),
-                      child: BannerAdWidget(
-                        adUnitId: AdService.homeBannerAdId,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -168,10 +168,14 @@ class HomePage extends HookConsumerWidget {
     bool isTablet,
     bool isLargeScreen,
   ) {
+    final size = MediaQuery.of(context).size;
+    final isSmallScreen = size.width < 400;
+    final isSmallHeight = size.height < 700;
+    
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: isLargeScreen ? 40 : 24,
-        vertical: 24,
+        horizontal: isSmallScreen ? 16 : (isLargeScreen ? 40 : 24),
+        vertical: isSmallHeight ? 16 : (isSmallScreen ? 20 : 24),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -183,8 +187,8 @@ class HomePage extends HookConsumerWidget {
                   padding: const EdgeInsets.all(2),
                   child: Image.asset(
                     'assets/blindkey_logo.png',
-                    width: isLargeScreen ? 60 : 54,
-                    height: isLargeScreen ? 60 : 54,
+                    width: isSmallScreen ? 48 : (isLargeScreen ? 60 : 54),
+                    height: isSmallScreen ? 48 : (isLargeScreen ? 60 : 54),
                     fit: BoxFit.contain,
                   ),
                 ),
@@ -192,25 +196,28 @@ class HomePage extends HookConsumerWidget {
                 Flexible(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         'BlindKey',
                         style: GoogleFonts.inter(
-                          fontSize: 20,
+                          fontSize: isSmallScreen ? 18 : 20,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                           letterSpacing: -0.5,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                       Text(
                         'Secure Storage',
                         style: GoogleFonts.inter(
-                          fontSize: 12,
+                          fontSize: isSmallScreen ? 11 : 12,
                           color: Colors.white54,
                           fontWeight: FontWeight.w400,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ],
                   ),
@@ -231,16 +238,17 @@ class HomePage extends HookConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                     side: BorderSide(color: Colors.white.withOpacity(0.1)),
                   ),
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+                  minimumSize: Size(isSmallScreen ? 36 : 40, isSmallScreen ? 36 : 40),
                 ),
-                icon: const Icon(
+                icon: Icon(
                   Icons.upload_file_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: isSmallScreen ? 18 : 20,
                 ),
                 tooltip: 'Import Vault',
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: isSmallScreen ? 6 : 8),
               IconButton(
                 onPressed: () {
                   // Navigation to settings
@@ -256,12 +264,13 @@ class HomePage extends HookConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                     side: BorderSide(color: Colors.white.withOpacity(0.1)),
                   ),
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+                  minimumSize: Size(isSmallScreen ? 36 : 40, isSmallScreen ? 36 : 40),
                 ),
-                icon: const Icon(
+                icon: Icon(
                   Icons.settings_outlined,
                   color: Colors.white70,
-                  size: 20,
+                  size: isSmallScreen ? 18 : 20,
                 ),
                 tooltip: 'Settings',
               ),
@@ -329,29 +338,57 @@ class HomePage extends HookConsumerWidget {
     bool isTablet,
     bool isLargeScreen,
   ) {
+    final size = MediaQuery.of(context).size;
+    final isSmallScreen = size.width < 400;
+    final isSmallHeight = size.height < 700;
+    
+    // Responsive grid configuration
+    final maxCrossAxisExtent = isSmallScreen 
+        ? size.width * 0.9 
+        : (isLargeScreen ? 400.0 : (isTablet ? 350.0 : size.width * 0.85));
+    
+    // Adjust aspect ratio - make cards taller to prevent overflow
+    // Lower aspect ratio = Taller card.
+    final childAspectRatio = isSmallHeight 
+        ? (isSmallScreen ? 1.1 : 1.15) 
+        : (isSmallScreen ? 1.1 : 1.18);
+    
+    // Responsive spacing
+    final crossAxisSpacing = isSmallScreen ? 12.0 : 16.0;
+    final mainAxisSpacing = isSmallScreen ? 12.0 : 16.0;
+    
+    // Responsive padding
+    final horizontalPadding = isSmallScreen 
+        ? 16.0 
+        : (isLargeScreen ? 40.0 : 24.0);
+    final verticalPadding = isSmallHeight ? 8.0 : 16.0;
+    
+    // Bottom padding - less on small screens
+    final bottomPadding = isSmallHeight ? 60.0 : 100.0;
+
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: isLargeScreen ? 40 : 24,
-              vertical: 16,
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
             ),
             child: Row(
               children: [
                 Text(
                   'Your Vaults',
                   style: GoogleFonts.inter(
-                    fontSize: 18,
+                    fontSize: isSmallScreen ? 16 : 18,
                     fontWeight: FontWeight.w500,
                     color: Colors.white,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isSmallScreen ? 8 : 10,
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
@@ -361,7 +398,7 @@ class HomePage extends HookConsumerWidget {
                   child: Text(
                     '${folders.length}',
                     style: GoogleFonts.inter(
-                      fontSize: 12,
+                      fontSize: isSmallScreen ? 11 : 12,
                       fontWeight: FontWeight.w600,
                       color: Colors.white70,
                     ),
@@ -372,13 +409,13 @@ class HomePage extends HookConsumerWidget {
           ),
         ),
         SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: isLargeScreen ? 40 : 24),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 400,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.6,
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: maxCrossAxisExtent,
+              crossAxisSpacing: crossAxisSpacing,
+              mainAxisSpacing: mainAxisSpacing,
+              childAspectRatio: childAspectRatio,
             ),
             delegate: SliverChildBuilderDelegate((context, index) {
               final folder = folders[index];
@@ -388,12 +425,14 @@ class HomePage extends HookConsumerWidget {
                 folder,
                 isTablet,
                 isLargeScreen,
+                isSmallScreen,
+                isSmallHeight,
               );
             }, childCount: folders.length),
           ),
         ),
-        // Bottom padding
-        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        // Bottom padding - responsive
+        SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
       ],
     );
   }
@@ -404,10 +443,21 @@ class HomePage extends HookConsumerWidget {
     dynamic folder,
     bool isTablet,
     bool isLargeScreen,
+    bool isSmallScreen,
+    bool isSmallHeight,
   ) {
+    // Responsive sizing
+    final cardPadding = isSmallScreen ? 12.0 : (isSmallHeight ? 16.0 : 20.0);
+    final iconSize = isSmallScreen ? 45.0 : (isSmallHeight ? 50.0 : 57.0);
+    final titleFontSize = isSmallScreen ? 14.0 : (isSmallHeight ? 15.0 : 16.0);
+    final statsFontSize = isSmallScreen ? 11.0 : 12.0;
+    final subStatsFontSize = isSmallScreen ? 10.0 : 11.0;
+    final borderRadius = isSmallScreen ? 12.0 : 16.0;
+    final iconBorderRadius = isSmallScreen ? 8.0 : 10.0;
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: Colors.white.withOpacity(0.08)),
         color: Colors.white.withOpacity(0.03),
       ),
@@ -415,39 +465,43 @@ class HomePage extends HookConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _openFolder(context, ref, folder),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(borderRadius),
           hoverColor: Colors.white.withOpacity(0.05),
           splashColor: Colors.white.withOpacity(0.1),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(cardPadding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.05),
+                    Flexible(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A1A1A),
+                          borderRadius: BorderRadius.circular(iconBorderRadius),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                        child: Image.asset(
+                          'assets/vault_icon.png',
+                          width: iconSize,
+                          height: iconSize,
+                          fit: BoxFit.contain,
                         ),
                       ),
-                      child: Image.asset(
-                        'assets/vault_icon.png',
-                        width: 57,
-                        height: 57,
-                      ),
                     ),
-
+                    const SizedBox(width: 8),
                     PopupMenuButton<String>(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.more_vert_rounded,
                         color: Colors.white24,
-                        size: 20,
+                        size: isSmallScreen ? 18 : 20,
                       ),
                       color: const Color(0xFF1A1A1A),
                       shape: RoundedRectangleBorder(
@@ -502,68 +556,81 @@ class HomePage extends HookConsumerWidget {
                     ),
                   ],
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      folder.name,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                        letterSpacing: -0.2,
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(height: isSmallScreen ? 4 : 8),
+                      Text(
+                        folder.name,
+                        style: GoogleFonts.inter(
+                          fontSize: titleFontSize,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: -0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Consumer(
-                      builder: (context, ref, child) {
-                        final statsAsync = ref.watch(
-                          folderStatsProvider(folder.id),
-                        );
-                        return statsAsync.when(
-                          data: (stats) => Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${stats.fileCount} Files',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: Colors.white54,
-                                  fontWeight: FontWeight.w500,
+                      SizedBox(height: isSmallScreen ? 2 : 6),
+                      Consumer(
+                        builder: (context, ref, child) {
+                          final statsAsync = ref.watch(
+                            folderStatsProvider(folder.id),
+                          );
+                          return statsAsync.when(
+                            data: (stats) => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${stats.fileCount} Files',
+                                  style: GoogleFonts.inter(
+                                    fontSize: statsFontSize,
+                                    color: Colors.white54,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${stats.sizeString} / 500 MB',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: stats.totalSize > 500 * 1024 * 1024
-                                      ? Colors.red.shade300
-                                      : Colors.white38,
+                                SizedBox(height: isSmallScreen ? 1 : 2),
+                                Text(
+                                  '${stats.sizeString} / 500 MB',
+                                  style: GoogleFonts.inter(
+                                    fontSize: subStatsFontSize,
+                                    color: stats.totalSize > 500 * 1024 * 1024
+                                        ? Colors.red.shade300
+                                        : Colors.white38,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
+                              ],
+                            ),
+                            loading: () => Text(
+                              'Loading...',
+                              style: GoogleFonts.inter(
+                                fontSize: subStatsFontSize,
+                                color: Colors.white24,
                               ),
-                            ],
-                          ),
-                          loading: () => Text(
-                            'Loading...',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.white24,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          error: (_, __) => Text(
-                            '--',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.white24,
+                            error: (_, __) => Text(
+                              '--',
+                              style: GoogleFonts.inter(
+                                fontSize: subStatsFontSize,
+                                color: Colors.white24,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
