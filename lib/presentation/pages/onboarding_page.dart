@@ -1,4 +1,6 @@
+import 'package:flutter_tilt/flutter_tilt.dart';
 import 'dart:ui';
+import 'dart:math' as math; // Added import
 import 'package:blindkey_app/presentation/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -34,7 +36,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
       mockWidget: const _MockShareWidget(),
       color: const Color(0xFFB71C1C), // Red 900
     ),
-
   ];
 
   @override
@@ -203,31 +204,44 @@ class _OnboardingPageState extends State<OnboardingPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Mock Widget Container with Premium Shadow/Glow
+          // Mock Widget Container with 3D Tilt and Auto-Sway
           Expanded(
             child: Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 320, maxHeight: 400),
-                decoration: BoxDecoration(
+              child: _AutoTiltWrapper(
+                child: Tilt(
                   borderRadius: BorderRadius.circular(32),
-                  boxShadow: [
-                    BoxShadow(
-                      color: item.color.withOpacity(0.15),
-                      blurRadius: 40,
-                      offset: const Offset(0, 20),
-                      spreadRadius: -10,
+                  tiltConfig: const TiltConfig(angle: 15),
+                  lightConfig: const LightConfig(
+                    disable: true,
+                  ),
+                  shadowConfig: const ShadowConfig(
+                    disable: true,
+                  ),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 320, maxHeight: 400),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(32),
+                      boxShadow: [
+                        BoxShadow(
+                          color: item.color.withOpacity(0.15),
+                          blurRadius: 40,
+                          offset: const Offset(0, 20),
+                          spreadRadius: -10,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(32),
-                  child: item.mockWidget,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(32),
+                      child: item.mockWidget,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
           
           const SizedBox(height: 40),
+
           
           // Typography
           Text(
@@ -739,6 +753,56 @@ class _MockShareWidget extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AutoTiltWrapper extends StatefulWidget {
+  final Widget child;
+  const _AutoTiltWrapper({required this.child});
+
+  @override
+  State<_AutoTiltWrapper> createState() => _AutoTiltWrapperState();
+}
+
+class _AutoTiltWrapperState extends State<_AutoTiltWrapper> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = _controller.value;
+        // Gentle sway math - Creates a figure-8 sway pattern
+        final double tiltX = (math.sin(value * math.pi * 2) * 0.05); 
+        final double tiltY = (math.cos(value * math.pi) * 0.05);
+
+        return Transform(
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.002) // Perspective
+            ..rotateX(tiltX)
+            ..rotateY(tiltY),
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }
