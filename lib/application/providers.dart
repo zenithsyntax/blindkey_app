@@ -11,8 +11,11 @@ import 'package:blindkey_app/infrastructure/auth/app_lock_service.dart';
 import 'package:blindkey_app/infrastructure/storage/file_storage_service.dart';
 import 'package:blindkey_app/infrastructure/storage/secure_storage_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 part 'providers.g.dart';
+
+final splashFinishedProvider = StateProvider<bool>((ref) => false);
 
 @riverpod
 TrustedTimeService trustedTimeService(TrustedTimeServiceRef ref) {

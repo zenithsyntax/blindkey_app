@@ -4,6 +4,7 @@ import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
 import 'package:blindkey_app/presentation/pages/home_page.dart';
+import 'package:blindkey_app/presentation/pages/splash_screen.dart';
 import 'package:blindkey_app/presentation/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -76,6 +77,7 @@ class BlindKeyApp extends HookConsumerWidget {
     final isLocked = ref.watch(appLockNotifierProvider);
     final termsState = ref.watch(termsNotifierProvider);
     final hasAcceptedTerms = termsState.valueOrNull ?? false;
+    final splashFinished = ref.watch(splashFinishedProvider); // Watch splash state
     
     // Security Check Provider (Simplified for this file)
     // We could make a dedicated SecurityNotifier but inline is faster for now.
@@ -121,12 +123,10 @@ class BlindKeyApp extends HookConsumerWidget {
       title: 'BlindKey',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkRedTheme,
-      home: const HomePage(),
+      home: const SplashScreen(),
       builder: (context, child) {
-        // Only apply lock screen if terms are accepted (or if we want to lock before terms? usually after)
-        // Actually, if terms are NOT accepted, the HomePage shows the Terms Dialog overlay.
-        // We probably don't want the Lock Screen covering the Terms Dialog.
-        final showLock = isLocked && hasAcceptedTerms;
+        // Only apply lock screen if terms are accepted AND splash is finished
+        final showLock = isLocked && hasAcceptedTerms && splashFinished;
         
         return Stack(
           children: [
