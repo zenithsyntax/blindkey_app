@@ -24,7 +24,9 @@ class HomePage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final foldersAsync = ref.watch(folderNotifierProvider);
     final termsState = ref.watch(termsNotifierProvider);
-    final termsAccepted = termsState.valueOrNull ?? true; // Default to true while loading to avoid flash, or false? 
+    final termsAccepted =
+        termsState.valueOrNull ??
+        true; // Default to true while loading to avoid flash, or false?
     // Actually if loading, it defaults to null. If null, we assume valid until loaded?
     // User wants it to POPUP. If it is not accepted, it should be false.
     // If loading, AsyncValue.loading has no value.
@@ -32,7 +34,7 @@ class HomePage extends HookConsumerWidget {
     // But if we default to true, it won't show. If default to false, it shows then hides.
     // Ideally we wait for loading in main, BUT we moved to HomePage.
     // Let's check: prefs is fast.
-    
+
     final shouldShowTerms = !termsAccepted && !termsState.isLoading;
 
     final size = MediaQuery.of(context).size;
@@ -61,7 +63,7 @@ class HomePage extends HookConsumerWidget {
                   ),
                 ),
               ),
-    
+
               // Noise texture overlay (responsive)
               Positioned(
                 top: -size.height * 0.2, // Relative to screen height
@@ -83,81 +85,79 @@ class HomePage extends HookConsumerWidget {
                   ),
                 ),
               ),
-    
+
               // Main content
               SafeArea(
                 child: Column(
-                      children: [
-                        // Custom header - with responsive padding
-                        _buildHeader(context, ref, isTablet, isLargeScreen),
-                        
-                        // Content - flexible to prevent overflow
-                        Expanded(
-                          child: foldersAsync.when(
-                            data: (folders) {
-                              if (folders.isEmpty) {
-                                return _buildEmptyState(
-                                  context,
-                                  isTablet,
-                                  isLargeScreen,
-                                );
-                              }
-                              return _buildVaultsList(
-                                context,
-                                ref,
-                                folders,
-                                isTablet,
-                                isLargeScreen,
-                              );
-                            },
-                            error: (e, s) => _buildErrorState(e.toString(), isTablet),
-                            loading: () => Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.all(24.0),
-                                    child: SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
+                  children: [
+                    // Custom header - with responsive padding
+                    _buildHeader(context, ref, isTablet, isLargeScreen),
+
+                    // Content - flexible to prevent overflow
+                    Expanded(
+                      child: foldersAsync.when(
+                        data: (folders) {
+                          if (folders.isEmpty) {
+                            return _buildEmptyState(
+                              context,
+                              isTablet,
+                              isLargeScreen,
+                            );
+                          }
+                          return _buildVaultsList(
+                            context,
+                            ref,
+                            folders,
+                            isTablet,
+                            isLargeScreen,
+                          );
+                        },
+                        error: (e, s) =>
+                            _buildErrorState(e.toString(), isTablet),
+                        loading: () => Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(24.0),
+                                child: SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
                                   ),
-                                  Text(
-                                    'Loading Vaults...',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white54,
-                                      fontSize: 14,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
+                              Text(
+                                'Loading Vaults...',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        
-                        // Banner Ad at bottom
-                        Container(
-                          color: const Color(0xFF0F0F0F),
-                          child: BannerAdWidget(
-                            adUnitId: AdService.homeBannerAdId,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
+
+                    // Banner Ad at bottom
+                    Container(
+                      color: const Color(0xFF0F0F0F),
+                      child: BannerAdWidget(adUnitId: AdService.homeBannerAdId),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
           floatingActionButton: _buildModernFAB(context, isTablet),
         ),
-        
+
         // Terms Overlay
-        if (shouldShowTerms)
-          const Positioned.fill(child: TermsDialog()),
+        if (shouldShowTerms) const Positioned.fill(child: TermsDialog()),
       ],
     );
   }
@@ -171,7 +171,7 @@ class HomePage extends HookConsumerWidget {
     final size = MediaQuery.of(context).size;
     final isSmallScreen = size.width < 400;
     final isSmallHeight = size.height < 700;
-    
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isSmallScreen ? 16 : (isLargeScreen ? 40 : 24),
@@ -239,7 +239,10 @@ class HomePage extends HookConsumerWidget {
                     side: BorderSide(color: Colors.white.withOpacity(0.1)),
                   ),
                   padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
-                  minimumSize: Size(isSmallScreen ? 36 : 40, isSmallScreen ? 36 : 40),
+                  minimumSize: Size(
+                    isSmallScreen ? 36 : 40,
+                    isSmallScreen ? 36 : 40,
+                  ),
                 ),
                 icon: Icon(
                   Icons.upload_file_outlined,
@@ -265,7 +268,10 @@ class HomePage extends HookConsumerWidget {
                     side: BorderSide(color: Colors.white.withOpacity(0.1)),
                   ),
                   padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
-                  minimumSize: Size(isSmallScreen ? 36 : 40, isSmallScreen ? 36 : 40),
+                  minimumSize: Size(
+                    isSmallScreen ? 36 : 40,
+                    isSmallScreen ? 36 : 40,
+                  ),
                 ),
                 icon: Icon(
                   Icons.settings_outlined,
@@ -338,102 +344,114 @@ class HomePage extends HookConsumerWidget {
     bool isTablet,
     bool isLargeScreen,
   ) {
-    final size = MediaQuery.of(context).size;
-    final isSmallScreen = size.width < 400;
-    final isSmallHeight = size.height < 700;
-    
-    // Responsive grid configuration
-    final maxCrossAxisExtent = isSmallScreen 
-        ? size.width * 0.9 
-        : (isLargeScreen ? 400.0 : (isTablet ? 350.0 : size.width * 0.85));
-    
-    // Adjust aspect ratio - make cards taller to prevent overflow
-    // Lower aspect ratio = Taller card.
-    final childAspectRatio = isSmallHeight 
-        ? (isSmallScreen ? 1.1 : 1.15) 
-        : (isSmallScreen ? 1.1 : 1.18);
-    
-    // Responsive spacing
-    final crossAxisSpacing = isSmallScreen ? 12.0 : 16.0;
-    final mainAxisSpacing = isSmallScreen ? 12.0 : 16.0;
-    
-    // Responsive padding
-    final horizontalPadding = isSmallScreen 
-        ? 16.0 
-        : (isLargeScreen ? 40.0 : 24.0);
-    final verticalPadding = isSmallHeight ? 8.0 : 16.0;
-    
-    // Bottom padding - less on small screens
-    final bottomPadding = isSmallHeight ? 60.0 : 100.0;
+    // We use a LayoutBuilder to get the exact available width for the grid.
+    // This allows us to calculate the precise aspect ratio required to maintain
+    // a consistent card height, regardless of the screen width or grid column count.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final isSmallScreen = width < 600;
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: verticalPadding,
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'Your Vaults',
-                  style: GoogleFonts.inter(
-                    fontSize: isSmallScreen ? 16 : 18,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isSmallScreen ? 8 : 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${folders.length}',
-                    style: GoogleFonts.inter(
-                      fontSize: isSmallScreen ? 11 : 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white70,
+        // Determine column count based on available width
+        // We want cards to be roughly 160-200px wide on phones, and larger on tablets
+        int crossAxisCount;
+        if (width > 1200) {
+          crossAxisCount = 5;
+        } else if (width > 900) {
+          crossAxisCount = 4;
+        } else if (width > 600) {
+          crossAxisCount = 3;
+        } else {
+          crossAxisCount = 2; // Always at least 2 columns for grid look
+        }
+
+        // Standardized spacing
+        final double spacing = isSmallScreen ? 12.0 : 20.0;
+        final double padding = isSmallScreen ? 16.0 : 32.0;
+
+        // Calculate item width
+        // width = padding*2 + itemWidth*count + spacing*(count-1)
+        // itemWidth = (width - padding*2 - spacing*(count-1)) / count
+        final double totalHorizontalPadding = padding * 2;
+        final double totalSpacing = spacing * (crossAxisCount - 1);
+        final double itemWidth =
+            (width - totalHorizontalPadding - totalSpacing) / crossAxisCount;
+
+        // FIXED HEIGHT STRATEGY
+        // We define a fixed height that safely accommodates all content.
+        // Base height 200 + adjustments for text scale.
+        final textScale = MediaQuery.textScaleFactorOf(context);
+        final double baseHeight = 200.0; // Sufficient for Icon + Texts + Spacing
+        final double scaledHeight = baseHeight * (textScale > 1.0 ? (1.0 + (textScale - 1.0) * 0.5) : 1.0);
+        
+        // Calculate Aspect Ratio: ratio = width / height
+        final double childAspectRatio = (itemWidth / scaledHeight).clamp(0.5, 2.0);
+
+        return CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(padding, padding / 2, padding, padding / 2),
+                child: Row(
+                  children: [
+                    Text(
+                      'Your Vaults',
+                      style: GoogleFonts.inter(
+                        fontSize: isSmallScreen ? 16 : 18,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${folders.length}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-          sliver: SliverGrid(
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: maxCrossAxisExtent,
-              crossAxisSpacing: crossAxisSpacing,
-              mainAxisSpacing: mainAxisSpacing,
-              childAspectRatio: childAspectRatio,
+            SliverPadding(
+              padding: EdgeInsets.symmetric(horizontal: padding),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: spacing,
+                  mainAxisSpacing: spacing,
+                  childAspectRatio: childAspectRatio,
+                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final folder = folders[index];
+                  return _buildModernVaultCard(
+                    context,
+                    ref,
+                    folder,
+                  );
+                }, childCount: folders.length),
+              ),
             ),
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final folder = folders[index];
-              return _buildModernVaultCard(
-                context,
-                ref,
-                folder,
-                isTablet,
-                isLargeScreen,
-                isSmallScreen,
-                isSmallHeight,
-              );
-            }, childCount: folders.length),
-          ),
-        ),
-        // Bottom padding - responsive
-        SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
-      ],
+            // Bottom padding to avoid FAB overlap
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 100),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -441,196 +459,161 @@ class HomePage extends HookConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     dynamic folder,
-    bool isTablet,
-    bool isLargeScreen,
-    bool isSmallScreen,
-    bool isSmallHeight,
   ) {
-    // Responsive sizing
-    final cardPadding = isSmallScreen ? 12.0 : (isSmallHeight ? 16.0 : 20.0);
-    final iconSize = isSmallScreen ? 45.0 : (isSmallHeight ? 50.0 : 57.0);
-    final titleFontSize = isSmallScreen ? 14.0 : (isSmallHeight ? 15.0 : 16.0);
-    final statsFontSize = isSmallScreen ? 11.0 : 12.0;
-    final subStatsFontSize = isSmallScreen ? 10.0 : 11.0;
-    final borderRadius = isSmallScreen ? 12.0 : 16.0;
-    final iconBorderRadius = isSmallScreen ? 8.0 : 10.0;
-
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
         color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _openFolder(context, ref, folder),
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: BorderRadius.circular(16),
           hoverColor: Colors.white.withOpacity(0.05),
           splashColor: Colors.white.withOpacity(0.1),
           child: Padding(
-            padding: EdgeInsets.all(cardPadding),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              mainAxisSize: MainAxisSize.min,
               children: [
+                // Top Row: Icon and Menu
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(iconBorderRadius),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.05),
-                          ),
+                    Container(
+                      padding: const EdgeInsets.all(2), // Optional inner padding
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.05),
                         ),
-                        child: Image.asset(
-                          'assets/vault_icon.png',
-                          width: iconSize,
-                          height: iconSize,
-                          fit: BoxFit.contain,
-                        ),
+                      ),
+                      child: Image.asset(
+                        'assets/vault_icon.png',
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.contain,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    PopupMenuButton<String>(
-                      icon: Icon(
-                        Icons.more_vert_rounded,
-                        color: Colors.white24,
-                        size: isSmallScreen ? 18 : 20,
-                      ),
-                      color: const Color(0xFF1A1A1A),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.white.withOpacity(0.1)),
-                      ),
-                      onSelected: (value) {
-                        if (value == 'rename') {
-                          _showRenameDialog(context, ref, folder);
-                        } else if (value == 'delete') {
-                          _confirmDelete(context, ref, folder);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'rename',
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.edit_outlined,
-                                size: 18,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Rename',
-                                style: GoogleFonts.inter(color: Colors.white),
-                              ),
-                            ],
-                          ),
+                    SizedBox(
+                      width: 28, 
+                      height: 28,
+                      child: PopupMenuButton<String>(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white24,
+                          size: 20,
                         ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 18,
-                                color: Colors.redAccent,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Delete',
-                                style: GoogleFonts.inter(
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                            ],
-                          ),
+                        color: const Color(0xFF1A1A1A),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.white.withOpacity(0.1)),
                         ),
-                      ],
+                        onSelected: (value) {
+                          if (value == 'rename') {
+                            _showRenameDialog(context, ref, folder);
+                          } else if (value == 'delete') {
+                            _confirmDelete(context, ref, folder);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'rename',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.edit_outlined, size: 18, color: Colors.white),
+                                const SizedBox(width: 12),
+                                Text('Rename', style: GoogleFonts.inter(color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                                const SizedBox(width: 12),
+                                Text('Delete', style: GoogleFonts.inter(color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(height: isSmallScreen ? 4 : 8),
-                      Text(
-                        folder.name,
-                        style: GoogleFonts.inter(
-                          fontSize: titleFontSize,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: -0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: isSmallScreen ? 2 : 6),
-                      Consumer(
-                        builder: (context, ref, child) {
-                          final statsAsync = ref.watch(
-                            folderStatsProvider(folder.id),
-                          );
-                          return statsAsync.when(
-                            data: (stats) => Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${stats.fileCount} Files',
-                                  style: GoogleFonts.inter(
-                                    fontSize: statsFontSize,
-                                    color: Colors.white54,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(height: isSmallScreen ? 1 : 2),
-                                Text(
-                                  '${stats.sizeString} / 500 MB',
-                                  style: GoogleFonts.inter(
-                                    fontSize: subStatsFontSize,
-                                    color: stats.totalSize > 500 * 1024 * 1024
-                                        ? Colors.red.shade300
-                                        : Colors.white38,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                            loading: () => Text(
-                              'Loading...',
-                              style: GoogleFonts.inter(
-                                fontSize: subStatsFontSize,
-                                color: Colors.white24,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            error: (_, __) => Text(
-                              '--',
-                              style: GoogleFonts.inter(
-                                fontSize: subStatsFontSize,
-                                color: Colors.white24,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                
+                const Spacer(),
+                
+                // Folder Name
+                Text(
+                  folder.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: -0.2,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                
+                const SizedBox(height: 4),
+                
+                // Stats
+                Consumer(
+                  builder: (context, ref, child) {
+                    final statsAsync = ref.watch(folderStatsProvider(folder.id));
+                    return statsAsync.when(
+                      data: (stats) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${stats.fileCount} Files',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white54,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${stats.sizeString} / 500 MB',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: stats.totalSize > 500 * 1024 * 1024
+                                  ? Colors.red.shade300
+                                  : Colors.white38,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                      loading: () => Text(
+                        'Loading...',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.white24,
+                        ),
+                      ),
+                      error: (_, __) => Text(
+                        '--',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.white24,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -831,9 +814,12 @@ class HomePage extends HookConsumerWidget {
 
                                   try {
                                     // Show interstitial ad before importing
-                                    final adService = ref.read(adServiceProvider);
-                                    adService.showImportBlindKeyInterstitialAd();
-                                    
+                                    final adService = ref.read(
+                                      adServiceProvider,
+                                    );
+                                    adService
+                                        .showImportBlindKeyInterstitialAd();
+
                                     await ref
                                         .read(folderNotifierProvider.notifier)
                                         .importFolder(
@@ -870,8 +856,8 @@ class HomePage extends HookConsumerWidget {
                                           'Import failed: Incorrect password or corrupted file';
                                       if (e is Failure) {
                                         e.maybeWhen(
-                                          fileExpired: () =>
-                                              msg = 'This vault file has expired',
+                                          fileExpired: () => msg =
+                                              'This vault file has expired',
                                           unexpected: (m) => msg = m,
                                           orElse: () {},
                                         );
