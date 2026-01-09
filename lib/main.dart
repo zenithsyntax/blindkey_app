@@ -5,11 +5,13 @@ import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
 import 'package:blindkey_app/presentation/pages/home_page.dart';
 import 'package:blindkey_app/presentation/pages/splash_screen.dart';
+import 'package:blindkey_app/presentation/pages/onboarding_page.dart';
 import 'package:blindkey_app/presentation/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:screen_protector/screen_protector.dart';
 import 'package:safe_device/safe_device.dart';
@@ -26,6 +28,10 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Check First Run
+  final prefs = await SharedPreferences.getInstance();
+  final isFirstRun = prefs.getBool('is_first_run') ?? true;
+
   // Security Hardening: Secure Screen (Prevent Screenshots/Recording)
   // Only available on Android. iOS handles this differently (usually via specific event listeners or blanking screens).
   if (Platform.isAndroid) {
@@ -36,11 +42,14 @@ void main() async {
     }
   }
 
-  runApp(const ProviderScope(child: BlindKeyApp()));
+  runApp(ProviderScope(
+    child: BlindKeyApp(isFirstRun: isFirstRun),
+  ));
 }
 
 class BlindKeyApp extends HookConsumerWidget {
-  const BlindKeyApp({super.key});
+  final bool isFirstRun;
+  const BlindKeyApp({super.key, required this.isFirstRun});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -123,7 +132,7 @@ class BlindKeyApp extends HookConsumerWidget {
       title: 'BlindKey',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkRedTheme,
-      home: const SplashScreen(),
+      home: isFirstRun ? const OnboardingPage() : const SplashScreen(),
       builder: (context, child) {
         // Only apply lock screen if terms are accepted AND splash is finished
         final showLock = isLocked && hasAcceptedTerms && splashFinished;
@@ -142,3 +151,4 @@ class BlindKeyApp extends HookConsumerWidget {
     );
   }
 }
+
