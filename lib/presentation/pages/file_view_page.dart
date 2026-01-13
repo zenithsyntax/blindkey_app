@@ -451,6 +451,7 @@ class FileViewPage extends HookConsumerWidget {
                                     fileSize: fileDetails.data!.size,
                                     trustedNow: trustedTimeSnapshot.data,
                                     isAdLoaded: isAdLoaded.value,
+                                    allowSave: allowSave,
                                   )
                                 : (fileDetails.data!.mimeType.startsWith(
                                         'image/svg',
@@ -471,6 +472,7 @@ class FileViewPage extends HookConsumerWidget {
                                                     fileDetails.data!.size,
                                                 trustedNow:
                                                     trustedTimeSnapshot.data,
+                                                allowSave: allowSave,
                                               )
                                             : (fileDetails.data!.mimeType
                                                       .startsWith('text/')
@@ -537,6 +539,7 @@ class FileViewPage extends HookConsumerWidget {
                                                                         fileName: fileDetails
                                                                             .data!
                                                                             .fileName,
+                                                                        allowSave: allowSave,
                                                                       )
                                                                     : (fileDetails.data!.mimeType.contains('presentation') ||
                                                                               fileDetails.data!.mimeType.contains('powerpoint')
@@ -544,6 +547,7 @@ class FileViewPage extends HookConsumerWidget {
                                                                               file: file,
                                                                               folderKey: folderKey,
                                                                               fileName: fileDetails.data!.fileName,
+                                                                              allowSave: allowSave,
                                                                             )
                                                                           : (fileDetails.data!.mimeType.startsWith('audio/')
                                                                                 ? _AudioView(
@@ -556,6 +560,7 @@ class FileViewPage extends HookConsumerWidget {
                                                                                     file: file,
                                                                                     folderKey: folderKey,
                                                                                     fileName: fileDetails.data!.fileName,
+                                                                                    allowSave: allowSave,
                                                                                   ))))))))),
                           ),
                   ),
@@ -676,6 +681,7 @@ class FileViewPage extends HookConsumerWidget {
         fileSize: meta.size,
         trustedNow: trustedNow,
         isAdLoaded: false, // This method is unused, default to false
+        allowSave: allowSave,
       );
     }
 
@@ -698,6 +704,7 @@ class FileViewPage extends HookConsumerWidget {
         folderKey: folderKey,
         fileSize: meta.size,
         trustedNow: trustedNow,
+        allowSave: allowSave,
       );
     }
 
@@ -733,6 +740,7 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileName: meta.fileName,
+        allowSave: allowSave,
       );
     }
 
@@ -741,6 +749,7 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileName: meta.fileName,
+        allowSave: allowSave,
       );
     }
 
@@ -757,6 +766,7 @@ class FileViewPage extends HookConsumerWidget {
       file: file,
       folderKey: folderKey,
       fileName: meta.fileName,
+      allowSave: allowSave,
     );
   }
 }
@@ -823,11 +833,13 @@ class _UnsupportedFileView extends ConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final String fileName;
+  final bool allowSave;
 
   const _UnsupportedFileView({
     required this.file,
     required this.folderKey,
     required this.fileName,
+    required this.allowSave,
   });
 
   @override
@@ -860,23 +872,29 @@ class _UnsupportedFileView extends ConsumerWidget {
               style: GoogleFonts.inter(fontSize: 14, color: Colors.white54),
             ),
             const SizedBox(height: 32),
-            OutlinedButton.icon(
-              onPressed: () {
-                openExternally(context, ref, file, folderKey, fileName);
-              },
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Colors.white24),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
+            if (allowSave)
+              OutlinedButton.icon(
+                onPressed: () {
+                  openExternally(context, ref, file, folderKey, fileName);
+                },
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: Text("Open Externally", style: GoogleFonts.inter()),
+              )
+            else
+              Text(
+                "Extraction disabled by owner",
+                style: GoogleFonts.inter(fontSize: 12, color: Colors.white24),
               ),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: Text("Open Externally", style: GoogleFonts.inter()),
-            ),
           ],
         ),
       ),
@@ -922,12 +940,14 @@ class _ImageView extends HookConsumerWidget {
   final SecretKey folderKey;
   final int fileSize;
   final DateTime? trustedNow;
+  final bool allowSave;
 
   const _ImageView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
     this.trustedNow,
+    required this.allowSave,
   });
 
   @override
@@ -1136,41 +1156,43 @@ class _ImageView extends HookConsumerWidget {
                 ),
                 const Spacer(),
                 // File info could go here
-                IconButton(
-                  icon: const Icon(
-                    Icons.open_in_new_rounded,
-                    color: Colors.white,
+                if (allowSave)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.open_in_new_rounded,
+                      color: Colors.white,
+                    ),
+                    tooltip: 'Open Externally',
+                    onPressed: () async {
+                      if (trustedNow != null) {
+                        // Optional: check expiry again?
+                      }
+                      // Reuse the global openExternally function
+                      // Need to check if file model has fileName, usually it does or we got it from meta
+                      // helper.
+
+                      // We need the filename. The 'file' model might not have the decrypted name.
+                      // But openExternally takes 'fileName'.
+                      // We don't have easy access to the decrypted filename here unless we pass it
+                      // or decrypt it again (cheap metadata).
+                      // In FileViewPage we had fileDetails.data.
+                      // We should probably pass fileName to _ImageView to be safe/efficient.
+                      // For now, let's try to use file.fileName if available or "image"
+                      // checking openExternally signature: needs fileName.
+
+                      await openExternally(
+                        context,
+                        ref,
+                        file,
+                        folderKey,
+                        // Fallback or re-fetch?
+                        // best to use a default or handle inside.
+                        // Let's modify _ImageView to accept fileName to be clean.
+                        // We already identified this earlier.
+                        "image",
+                      );
+                    },
                   ),
-                  tooltip: 'Open Externally',
-                  onPressed: () async {
-                    if (trustedNow != null) {
-                      // Optional: check expiry again?
-                    }
-                    // Reuse the global openExternally function
-                    // Need to check if file model has fileName, usually it does or we got it from meta
-                    // helper.
-
-                    // We need the filename. The 'file' model might not have the decrypted name.
-                    // But openExternally takes 'fileName'.
-                    // We don't have easy access to the decrypted filename here unless we pass it
-                    // or decrypt it again (cheap metadata).
-                    // In FileViewPage we had fileDetails.data.
-                    // We should probably pass fileName to _ImageView to be safe/efficient.
-                    // For now, let's try to use file.fileName if available or "image"
-                    // checking openExternally signature: needs fileName.
-
-                    await openExternally(
-                      context,
-                      ref,
-                      file,
-                      folderKey,
-                      // Fallback or re-fetch?
-                      // best to use a default or handle inside.
-                      // Let's modify _ImageView to accept fileName to be clean.
-                      "image",
-                    );
-                  },
-                ),
               ],
             ),
           ),
@@ -1244,6 +1266,7 @@ class _VideoView extends HookConsumerWidget {
   final int fileSize;
   final DateTime? trustedNow;
   final bool isAdLoaded;
+  final bool allowSave;
 
   const _VideoView({
     required this.file,
@@ -1251,6 +1274,7 @@ class _VideoView extends HookConsumerWidget {
     required this.fileSize,
     this.trustedNow,
     required this.isAdLoaded,
+    required this.allowSave,
   });
 
   @override
@@ -1347,6 +1371,7 @@ class _VideoView extends HookConsumerWidget {
     return _VideoPlayerView(
       filePath: videoPath.value!,
       isAdLoaded: isAdLoaded,
+      allowSave: allowSave,
       onOpenExternal: () async {
         final confirm = await showDialog<bool>(
           context: context,
@@ -1438,11 +1463,13 @@ class _VideoPlayerView extends StatefulWidget {
   final String filePath;
   final VoidCallback onOpenExternal;
   final bool isAdLoaded;
+  final bool allowSave;
 
   const _VideoPlayerView({
     required this.filePath,
     required this.onOpenExternal,
     required this.isAdLoaded,
+    required this.allowSave,
   });
 
   @override
@@ -1677,14 +1704,15 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
                                 }
                               },
                             ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.open_in_new_rounded,
-                                color: Colors.white,
+                            if (widget.allowSave)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  color: Colors.white,
+                                ),
+                                tooltip: 'Open Externally',
+                                onPressed: widget.onOpenExternal,
                               ),
-                              tooltip: 'Open Externally',
-                              onPressed: widget.onOpenExternal,
-                            ),
                           ],
                         ),
                       ),
