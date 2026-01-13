@@ -26,6 +26,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 
 class FileViewPage extends HookConsumerWidget {
@@ -794,13 +795,7 @@ Future<void> openExternally(
   final tempFile = File(tempPath);
 
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Decrypting...', style: GoogleFonts.inter()),
-        backgroundColor: Colors.white10,
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    CustomSnackbar.showInfo(context, 'Decrypting...');
   }
 
   try {
@@ -815,12 +810,8 @@ Future<void> openExternally(
     final res = await OpenFile.open(tempPath);
     if (res.type != ResultType.done) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${res.message}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // PROFESSIONAL: Removed "Error: " prefix, let CustomSnackbar style handle it
+        CustomSnackbar.showError(context, "Could not open file: ${res.message}");
       }
     }
   } catch (e) {
@@ -833,12 +824,7 @@ Future<void> openExternally(
     }
 
     if (context.mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
-          backgroundColor: Colors.red.shade800,
-        ),
-      );
+       CustomSnackbar.showError(context, ErrorMapper.getUserFriendlyError(e));
     }
   }
 }

@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:blindkey_app/presentation/pages/settings/privacy_policy_page.dart';
 import 'package:blindkey_app/presentation/pages/settings/terms_content_page.dart';
 import 'package:blindkey_app/presentation/pages/settings/user_guide_page.dart';
+import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class SecuritySettingsPage extends HookConsumerWidget {
@@ -135,15 +136,12 @@ class SecuritySettingsPage extends HookConsumerWidget {
                            if (newPin != null) {
                              await notifier.setPin(newPin);
                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'PIN updated successfully', 
-                                      style: GoogleFonts.inter(color: Colors.white),
-                                    ),
-                                    backgroundColor: Colors.green.shade800,
-                                  ),
+                             if (context.mounted) {
+                                CustomSnackbar.showSuccess(
+                                  context,
+                                  'PIN updated successfully',
                                 );
+                             }
                              }
                            }
                         }

@@ -18,6 +18,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/cryptography.dart';
 import 'dart:ui';
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 
 class HomePage extends HookConsumerWidget {
@@ -809,16 +810,9 @@ class HomePage extends HookConsumerWidget {
         if (!path.toLowerCase().endsWith('.blindkey')) {
           isImporting.value = false;
           if (context.mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Only .blindkey files can be uploaded. This file format is not supported.', 
-                  style: GoogleFonts.inter(),
-                ),
-                backgroundColor: Colors.red.shade800,
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
+             CustomSnackbar.showError(
+              context,
+              'Only .blindkey files can be uploaded. This file format is not supported.',
             );
           }
           return;
@@ -927,27 +921,13 @@ class HomePage extends HookConsumerWidget {
                                           passwordController.text,
                                         );
 
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Vault imported successfully',
-                                            style: GoogleFonts.inter(),
-                                          ),
-                                          backgroundColor:
-                                              Colors.green.shade800,
-                                          behavior: SnackBarBehavior.floating,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                        CustomSnackbar.showSuccess(
+                                          context,
+                                          'Vault imported successfully',
+                                        );
+                                      }
                                   } catch (e) {
                                     if (context.mounted) {
                                       isLoading.value = false;
@@ -1302,18 +1282,13 @@ class HomePage extends HookConsumerWidget {
                                   .renameFolder(folder.id, controller.text);
                               if (context.mounted) Navigator.pop(context);
                             } catch (e) {
-                              if (context.mounted) {
-                                Navigator.pop(context); // Close dialog first? Or keep open? 
-                                // Better to keep open but simpler to toast for now as this is a simple dialog function
-                                // If we want to keep open, we need state.
-                                // Let's close and show specific error snackbar which is cleaner than crashing
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
-                                    backgroundColor: Colors.red.shade800,
-                                  ),
-                                );
-                              }
+                                if (context.mounted) {
+                                  Navigator.pop(context); 
+                                  CustomSnackbar.showError(
+                                    context,
+                                    ErrorMapper.getUserFriendlyError(e),
+                                  );
+                                }
                             }
                           }
                         },
@@ -1377,11 +1352,9 @@ class HomePage extends HookConsumerWidget {
                 } catch (e) {
                    if (context.mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
-                        backgroundColor: Colors.red.shade800,
-                      ),
+                    CustomSnackbar.showError(
+                      context,
+                      ErrorMapper.getUserFriendlyError(e),
                     );
                   }
                 }

@@ -22,7 +22,9 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart'; // Added Google Fonts
 import 'package:path_provider/path_provider.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 
 class FolderViewPage extends HookConsumerWidget {
@@ -150,14 +152,9 @@ class FolderViewPage extends HookConsumerWidget {
                                 context,
                               ).pop(); // Close FolderViewPage
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    "Password changed. Please reopen vault.",
-                                    style: GoogleFonts.inter(),
-                                  ),
-                                  backgroundColor: Colors.green,
-                                ),
+                              CustomSnackbar.showSuccess(
+                                context,
+                                "Password changed. Please reopen vault.",
                               );
                             },
                           ),
@@ -541,14 +538,7 @@ class FolderViewPage extends HookConsumerWidget {
   }
 
   void _showError(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.inter()),
-        backgroundColor: Colors.red.shade800,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    CustomSnackbar.showError(context, message);
   }
 
   Widget _buildEmptyState(BuildContext context) {
@@ -1101,18 +1091,7 @@ class _FileThumbnail extends HookConsumerWidget {
                                       );
 
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              "File deleted",
-                                              style: GoogleFonts.inter(),
-                                            ),
-                                            backgroundColor:
-                                                Colors.red.shade900,
-                                          ),
-                                        );
+                                        CustomSnackbar.showSuccess(context, "File deleted");
                                       }
                                     },
                                     child: Text(
@@ -1146,15 +1125,9 @@ class _FileThumbnail extends HookConsumerWidget {
                 ref.invalidate(folderStatsProvider(file.folderId));
 
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        "This file expired on ${file.expiryDate!.toLocal().toString().split('.')[0]} and has been deleted",
-                        style: GoogleFonts.inter(),
-                      ),
-                      backgroundColor: Colors.red.shade900,
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                  CustomSnackbar.showSuccess(
+                    context,
+                    "This file expired on ${file.expiryDate!.toLocal().toString().split('.')[0]} and has been deleted",
                   );
                 }
                 return;
@@ -1408,16 +1381,9 @@ class _FileThumbnail extends HookConsumerWidget {
           } else {
             // Show rationale if needed or just request
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Full storage access required to save files",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.orange.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                ),
+              CustomSnackbar.showInfo(
+                context,
+                "Full storage access required to save files",
               );
             }
             final newStatus = await Permission.manageExternalStorage.request();
@@ -1432,16 +1398,9 @@ class _FileThumbnail extends HookConsumerWidget {
             hasPermission = true;
           } else {
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    "Storage permission required to save files",
-                    style: GoogleFonts.inter(),
-                  ),
-                  backgroundColor: Colors.orange.shade800,
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
-                ),
+              CustomSnackbar.showInfo(
+                context,
+                "Storage permission required to save files",
               );
             }
             final newStatus = await Permission.storage.request();
@@ -1451,20 +1410,11 @@ class _FileThumbnail extends HookConsumerWidget {
 
         if (!hasPermission) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Storage permission denied. Cannot save file.",
-                  style: GoogleFonts.inter(),
-                ),
-                backgroundColor: Colors.red.shade800,
-                behavior: SnackBarBehavior.floating,
-                action: SnackBarAction(
-                  label: "Settings",
-                  textColor: Colors.white,
-                  onPressed: () => openAppSettings(),
-                ),
-              ),
+            CustomSnackbar.showError(
+              context,
+              "Storage permission denied. Cannot save file.",
+              actionLabel: "Settings",
+              onAction: () => openAppSettings(),
             );
           }
           return;
@@ -1521,17 +1471,7 @@ class _FileThumbnail extends HookConsumerWidget {
 
       if (downloadDir == null) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Could not access Downloads folder",
-                style: GoogleFonts.inter(),
-              ),
-              backgroundColor: Colors.red.shade800,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          CustomSnackbar.showError(context, "Could not access Downloads folder");
         }
         return;
       }
@@ -1588,19 +1528,9 @@ class _FileThumbnail extends HookConsumerWidget {
         );
 
         if (success == true) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/${finalPath.split(Platform.pathSeparator).last}",
-                style: GoogleFonts.inter(),
-              ),
-              backgroundColor: Colors.green.shade800,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+          CustomSnackbar.showSuccess(
+            context,
+            "Saved to ${Platform.isIOS ? 'Documents' : 'Downloads'}/BlindKey/${finalPath.split(Platform.pathSeparator).last}",
           );
         }
       }
