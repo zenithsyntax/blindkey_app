@@ -37,6 +37,8 @@ class FolderViewPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final filesAsync = ref.watch(fileNotifierProvider(folder.id));
     final uploadProgress = ref.watch(uploadProgressProvider);
+    // State to track file selection/processing delay
+    final isProcessing = useState(false);
 
     final scrollController = useScrollController();
 
@@ -337,6 +339,66 @@ class FolderViewPage extends HookConsumerWidget {
                 ),
               ),
             ),
+        // File Selection Processing Overlay
+          if (isProcessing.value)
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    color: Colors.black.withOpacity(0.4),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 28,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.08),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              "Processing file...",
+                              style: GoogleFonts.inter(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0.2,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: Container(
@@ -360,19 +422,29 @@ class FolderViewPage extends HookConsumerWidget {
                 style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
               onPressed: () async {
-                final result = await FilePicker.platform.pickFiles(
-                  allowMultiple: true,
-                  withReadStream: false,
-                );
+                isProcessing.value = true;
+                try {
+                  // Small delay to ensure UI updates
+                  await Future.delayed(const Duration(milliseconds: 100));
 
-                if (result != null) {
-                  final files = result.paths
-                      .whereType<String>()
-                      .map((e) => File(e))
-                      .toList();
-                  if (files.isEmpty) return;
+                  final result = await FilePicker.platform.pickFiles(
+                    allowMultiple: true,
+                    withReadStream: false,
+                  );
 
-                  await _handleUpload(context, ref, files);
+                  if (result != null) {
+                    final files = result.paths
+                        .whereType<String>()
+                        .map((e) => File(e))
+                        .toList();
+                    if (files.isEmpty) return;
+
+                    await _handleUpload(context, ref, files);
+                  }
+                } catch (e) {
+                   debugPrint("Selection error: $e");
+                } finally {
+                  isProcessing.value = false;
                 }
               },
             ),

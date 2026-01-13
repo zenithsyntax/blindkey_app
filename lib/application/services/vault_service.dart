@@ -633,13 +633,13 @@ class VaultService {
     String path,
     String password,
   ) async {
+    File? tempZipFile;
     try {
       final file = File(path);
       if (!await file.exists())
         return left(const Failure.fileSystemError("File not found"));
 
-      // 1. Mandatory Internet Check for Import
-      // We must verify untampered time before trusting any expiry in the file.
+      // 1. Mandatory Internet Check
       DateTime trustedNow;
       try {
         trustedNow = await _trustedTimeService.getTrustedTime();
@@ -647,73 +647,80 @@ class VaultService {
         return left(const Failure.unexpected("Internet connection is required for security verification."));
       }
 
-      final bytes = await file.readAsBytes();
-      if (bytes.length < 16)
+      final fileLen = await file.length();
+      if (fileLen < 32 + 22) { // 32 byte salt + min zip size
         return left(const Failure.unexpected("Invalid file"));
+      }
 
-      // Extract Salt (first 16 bytes? My generic salt size. Argon2 defaults dynamic but I passed list?
-      // In `createFolder`: `generateRandomKey().then((k) => k.extractBytes())` -> 32 bytes (AesGcm 256 key is 32 bytes).
-      // So Salt is 32 bytes.
+      // 2. Read Salt (First 32 bytes)
+      final saltBytes = await file.openRead(0, 32).first;
+      // .first might not give full 32 bytes if chunked differently, but typically does for small read.
+      // Safer: read specific amount.
+      final openFile = await file.open();
+      final salt = await openFile.read(32);
+      await openFile.close();
+      
+      if (salt.length != 32) return left(const Failure.unexpected("Invalid file header"));
 
-      final salt = bytes.sublist(0, 32);
-      final zipData = bytes.sublist(32);
+      // 3. Extract ZIP portion to Temp File
+      // We cannot read the ZIP directly from offset 32 because ZipDecoder expects 0-based offsets.
+      // Copying the ZIP stream to a temporary file allows efficient random access without RAM overhead.
+      final tempDir = await getTemporaryDirectory();
+      final tempZipPath = '${tempDir.path}/import_${const Uuid().v4()}.zip';
+      tempZipFile = File(tempZipPath);
+      
+      // Stream copy from offset 32 to temp file
+      final zipSink = tempZipFile.openWrite();
+      await file.openRead(32).pipe(zipSink); // pipes stream to sink and closes sink
+      
+      // 4. Decode ZIP from Temp File (Disk-based)
+      final inputStream = InputFileStream(tempZipPath);
+      final archive = ZipDecoder().decodeBuffer(inputStream);
 
-      // Derive Key
+      // 5. Derive Key
       final key = await _cryptoService.deriveKeyFromPassword(password, salt);
 
-      // Unzip
-      final archive = ZipDecoder().decodeBytes(zipData);
-
-      // Find manifest
+      // 6. Manifest
       final manifestFile = archive.findFile('manifest.enc');
-      if (manifestFile == null)
-        return left(const Failure.unexpected("Invalid blindkey file"));
+      if (manifestFile == null) {
+        await inputStream.close();
+        return left(const Failure.unexpected("Invalid blindkey file structure"));
+      }
 
+      // Manifest is small, safe to load into memory
       final encManifest = manifestFile.content as List<int>;
       final decManifestRes = await _cryptoService.decryptData(
         encryptedData: encManifest,
         key: key,
       );
 
-      return decManifestRes.fold(
-        (l) => left(
-          const Failure.invalidPassword(),
-        ), // Decryption failed = Wrong password
+      return await decManifestRes.fold(
+        (l) async {
+          await inputStream.close();
+          return left(const Failure.invalidPassword());
+        },
         (clearBytes) async {
           final json = utf8.decode(clearBytes);
           final map = jsonDecode(json);
 
-          // Check Global Expiry from Manifest
+          // Check Global Expiry
           if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
             final expiryIso = map['expiryDate'] as String;
             final expiryDate = DateTime.tryParse(expiryIso);
-            
-            // Validate using TRUSTED TIME
-            if (expiryDate != null &&
-                trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
-              // Vault is expired
+            if (expiryDate != null && trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
+              await inputStream.close();
               return left(const Failure.fileExpired());
             }
           }
 
           // Import Folder
-          // Check if folder exists? Import as new?
-          // Let's import as new (rename if collision?).
-          // Using UUID so ID collision rare.
-
-          final folderId = map['id']; // Or generate new?
-          // If we use same ID, we merge?
-          // Requirement: "Import... imports into vault".
-          // Let's generate NEW Folder ID to avoid conflicts, but keep name.
-          // Reuse Salt/Verification? Yes, because we rely on the password.
-
           final newFolderId = const Uuid().v4();
           final folder = FolderModel(
             id: newFolderId,
             name: map['name'] + " (Imported)",
             salt: base64Encode(salt),
             verificationHash: map['verificationHash'],
-            createdAt: trustedNow, // Use trusted now for creation time too? Or keep local. Local is fine for creation.
+            createdAt: trustedNow,
             allowSave: map['allowSave'] ?? true,
           );
 
@@ -723,34 +730,31 @@ class VaultService {
           final filesList = (map['files'] as List)
               .map((e) => FileMetadata.fromJson(e))
               .toList();
+          
           final vaultPathRes = await _storageService.createEncryptedFileDir();
           final vaultPath = vaultPathRes.getOrElse(() => '');
 
           for (final meta in filesList) {
-            // Check file-specific expiry as well if present
-             if (meta.expiryDate != null &&
-                trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
-               // Skip expired file
+             if (meta.expiryDate != null && trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
                continue;
             }
 
-            final zipFile = archive.findFile(
-              meta.encryptedFilePath,
-            ); // 'files/{id}.enc'
+            final zipFile = archive.findFile(meta.encryptedFilePath);
             if (zipFile != null) {
-              final fileBytes = zipFile.content as List<int>;
               final newFileId = const Uuid().v4();
               final newPath = '$vaultPath/$newFileId.enc';
 
-              await File(newPath).writeAsBytes(fileBytes);
+              // EFFICIENT WRITE: Stream from ZIP to Disk
+              final outputStream = OutputFileStream(newPath);
+              zipFile.writeContent(outputStream);
+              await outputStream.close();
 
-              // Update Metadata with new path/id
+              // Update Metadata
               final newMeta = meta.copyWith(
                 id: newFileId,
                 encryptedFilePath: newPath,
               );
 
-              // Re-encrypt Metadata with Key
               final metaJson = jsonEncode(newMeta.toJson());
               final encMetaRes = await _cryptoService.encryptData(
                 data: utf8.encode(metaJson),
@@ -769,15 +773,23 @@ class VaultService {
               await _fileRepository.saveFileModel(fileModel);
             }
           }
+          
+          await inputStream.close();
           return right(unit);
         },
       );
     } catch (e) {
-      // Return network error if that was the cause, otherwise unexpected
       if (e.toString().contains("Internet")) {
-         return left(const Failure.unexpected("Internet connection is required for security verification."));
+         return left(const Failure.unexpected("Internet connection is required."));
       }
       return left(Failure.unexpected(e.toString()));
+    } finally {
+      // Cleanup Temp Zip
+      if (tempZipFile != null && await tempZipFile.exists()) {
+        try {
+          await tempZipFile.delete();
+        } catch (_) {}
+      }
     }
   }
 

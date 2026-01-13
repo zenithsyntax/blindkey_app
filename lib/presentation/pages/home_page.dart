@@ -41,6 +41,8 @@ class HomePage extends HookConsumerWidget {
     final isTablet = size.width > 600;
     final isLargeScreen = size.width > 900;
 
+    final isImporting = useState(false);
+
     return Stack(
       children: [
         Scaffold(
@@ -91,7 +93,7 @@ class HomePage extends HookConsumerWidget {
                 child: Column(
                   children: [
                     // Custom header - with responsive padding
-                    _buildHeader(context, ref, isTablet, isLargeScreen),
+                    _buildHeader(context, ref, isTablet, isLargeScreen, isImporting),
 
                     // Content - flexible to prevent overflow
                     Expanded(
@@ -158,6 +160,68 @@ class HomePage extends HookConsumerWidget {
 
         // Terms Overlay
         if (shouldShowTerms) const Positioned.fill(child: TermsDialog()),
+
+        // Import Loader
+        // Import Loader
+        if (isImporting.value)
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  color: Colors.black.withOpacity(0.4),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 28,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            "Processing file...",
+                            style: GoogleFonts.inter(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.2,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -167,6 +231,7 @@ class HomePage extends HookConsumerWidget {
     WidgetRef ref,
     bool isTablet,
     bool isLargeScreen,
+    ValueNotifier<bool> isImporting,
   ) {
     final size = MediaQuery.of(context).size;
     final isSmallScreen = size.width < 400;
@@ -231,7 +296,7 @@ class HomePage extends HookConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                onPressed: () => _importVault(context, ref),
+                onPressed: () => _importVault(context, ref, isImporting),
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.white.withOpacity(0.05),
                   shape: RoundedRectangleBorder(
@@ -723,14 +788,22 @@ class HomePage extends HookConsumerWidget {
     showDialog(context: context, builder: (_) => const CreateFolderDialog());
   }
 
-  Future<void> _importVault(BuildContext context, WidgetRef ref) async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+  Future<void> _importVault(
+      BuildContext context, WidgetRef ref, ValueNotifier<bool> isImporting) async {
+    isImporting.value = true;
+    try {
+      // Using a small delay to allow the loading indicator to render before the platform channel hangs (if it does)
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
 
-    if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
-      if (!context.mounted) return;
+      if (result != null && result.files.single.path != null) {
+        final path = result.files.single.path!;
+        if (!context.mounted) return;
+        
+        isImporting.value = false;
 
-      await showDialog(
+        await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => HookConsumer(
@@ -749,7 +822,8 @@ class HomePage extends HookConsumerWidget {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(28),
-                  child: Column(
+                  child: SingleChildScrollView(
+                    child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
@@ -925,12 +999,18 @@ class HomePage extends HookConsumerWidget {
                     ],
                   ),
                 ),
+                ),
               ),
             );
           },
         ),
       );
     }
+  } catch (e) {
+    debugPrint("Import Error: $e");
+  } finally {
+    isImporting.value = false;
+  }
   }
 
   void _openFolder(BuildContext context, WidgetRef ref, dynamic folder) {
@@ -960,7 +1040,8 @@ class HomePage extends HookConsumerWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(28),
-                child: Column(
+                child: SingleChildScrollView(
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
@@ -1133,6 +1214,7 @@ class HomePage extends HookConsumerWidget {
                       ],
                     ),
                   ],
+                ),
                 ),
               ),
             ),
