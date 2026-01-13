@@ -15,7 +15,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:cryptography/cryptography.dart';
 import 'dart:ui';
+import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 
 class HomePage extends HookConsumerWidget {
   const HomePage({super.key});
@@ -115,7 +118,7 @@ class HomePage extends HookConsumerWidget {
                           );
                         },
                         error: (e, s) =>
-                            _buildErrorState(e.toString(), isTablet),
+                            _buildErrorState(ErrorMapper.getUserFriendlyError(e), isTablet),
                         loading: () => Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -755,10 +758,13 @@ class HomePage extends HookConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            AutoSizeText(
               error,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(fontSize: 13, color: Colors.white54),
+              maxLines: 4,
+              minFontSize: 10,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -799,6 +805,25 @@ class HomePage extends HookConsumerWidget {
 
       if (result != null && result.files.single.path != null) {
         final path = result.files.single.path!;
+        
+        if (!path.toLowerCase().endsWith('.blindkey')) {
+          isImporting.value = false;
+          if (context.mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Only .blindkey files can be uploaded. This file format is not supported.', 
+                  style: GoogleFonts.inter(),
+                ),
+                backgroundColor: Colors.red.shade800,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            );
+          }
+          return;
+        }
+
         if (!context.mounted) return;
         
         isImporting.value = false;
@@ -865,6 +890,7 @@ class HomePage extends HookConsumerWidget {
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
+                          errorMaxLines: 3,
                           prefixIcon: const Icon(
                             Icons.lock_outline,
                             color: Colors.white30,
@@ -926,18 +952,7 @@ class HomePage extends HookConsumerWidget {
                                     if (context.mounted) {
                                       isLoading.value = false;
 
-                                      String msg =
-                                          'Import failed: Incorrect password or corrupted file';
-                                      if (e is Failure) {
-                                        e.maybeWhen(
-                                          fileExpired: () => msg =
-                                              'This vault file has expired',
-                                          unexpected: (m) => msg = m,
-                                          orElse: () {},
-                                        );
-                                      }
-
-                                      errorText.value = msg;
+                                      errorText.value = ErrorMapper.getUserFriendlyError(e);
 
                                       // Ensure provider state is refreshed to clear any error state
                                       // This prevents "unable to load vaults" error from persisting
@@ -1179,7 +1194,7 @@ class HomePage extends HookConsumerWidget {
                                       if (context.mounted) {
                                         isLoading.value = false;
                                         errorText.value =
-                                            'An error occurred: $e';
+                                            ErrorMapper.getUserFriendlyError(e);
                                       }
                                     }
                                   },
@@ -1281,10 +1296,25 @@ class HomePage extends HookConsumerWidget {
                       child: ElevatedButton(
                         onPressed: () async {
                           if (controller.text.isNotEmpty) {
-                            await ref
-                                .read(folderNotifierProvider.notifier)
-                                .renameFolder(folder.id, controller.text);
-                            if (context.mounted) Navigator.pop(context);
+                            try {
+                              await ref
+                                  .read(folderNotifierProvider.notifier)
+                                  .renameFolder(folder.id, controller.text);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              if (context.mounted) {
+                                Navigator.pop(context); // Close dialog first? Or keep open? 
+                                // Better to keep open but simpler to toast for now as this is a simple dialog function
+                                // If we want to keep open, we need state.
+                                // Let's close and show specific error snackbar which is cleaner than crashing
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
+                                    backgroundColor: Colors.red.shade800,
+                                  ),
+                                );
+                              }
+                            }
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -1339,14 +1369,29 @@ class HomePage extends HookConsumerWidget {
             ),
             TextButton(
               onPressed: () async {
-                await ref
-                    .read(folderNotifierProvider.notifier)
-                    .deleteFolder(folder.id);
-                if (context.mounted) Navigator.pop(context);
+                try {
+                  await ref
+                      .read(folderNotifierProvider.notifier)
+                      .deleteFolder(folder.id);
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                   if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
+                        backgroundColor: Colors.red.shade800,
+                      ),
+                    );
+                  }
+                }
               },
               child: Text(
                 'Delete',
-                style: GoogleFonts.inter(color: Colors.redAccent),
+                style: GoogleFonts.inter(
+                  color: const Color(0xFFC62828),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

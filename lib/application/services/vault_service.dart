@@ -103,6 +103,8 @@ class VaultService {
         );
         return await _folderRepository.saveFolder(folder);
       });
+    } on FileSystemException catch (e) {
+      return left(Failure.fileSystemError(e.message));
     } catch (e) {
       return left(Failure.unexpected(e.toString()));
     }
@@ -216,6 +218,8 @@ class VaultService {
           );
         },
       );
+    } on FileSystemException catch (e) {
+      return left(Failure.fileSystemError(e.message));
     } catch (e) {
       return left(Failure.unexpected(e.toString()));
     }
@@ -636,8 +640,9 @@ class VaultService {
     File? tempZipFile;
     try {
       final file = File(path);
-      if (!await file.exists())
+      if (!await file.exists()) {
         return left(const Failure.fileSystemError("File not found"));
+      }
 
       // 1. Mandatory Internet Check
       DateTime trustedNow;
@@ -778,8 +783,10 @@ class VaultService {
           return right(unit);
         },
       );
+    } on FileSystemException catch (e) {
+      return left(Failure.fileSystemError(e.message));
     } catch (e) {
-      if (e.toString().contains("Internet")) {
+      if (e.toString().contains("Internet") || e.toString().contains("SocketException")) {
          return left(const Failure.unexpected("Internet connection is required."));
       }
       return left(Failure.unexpected(e.toString()));

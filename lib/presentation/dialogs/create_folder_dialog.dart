@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 
 class CreateFolderDialog extends HookConsumerWidget {
   const CreateFolderDialog({super.key});
@@ -16,7 +18,9 @@ class CreateFolderDialog extends HookConsumerWidget {
     final confirmPasswordController = useTextEditingController();
     final formKey = useMemoized(() => GlobalKey<FormState>());
     final isMatching = useState(true);
+
     final isLoading = useState(false);
+    final errorText = useState<String?>(null);
 
     // Common Input Decoration
     InputDecoration buildInputDecoration(String label, {String? errorText}) {
@@ -68,6 +72,34 @@ class CreateFolderDialog extends HookConsumerWidget {
                       color: Colors.white,
                     ),
                   ),
+                  if (errorText.value != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, size: 20, color: Colors.red.shade300),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: AutoSizeText(
+                              errorText.value!,
+                              style: GoogleFonts.inter(
+                                color: Colors.red.shade200,
+                                fontSize: 13,
+                              ),
+                              maxLines: 3,
+                              minFontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   
                   // Name Field
@@ -154,10 +186,13 @@ class CreateFolderDialog extends HookConsumerWidget {
                                             passwordController.text,
                                           );
                                       if (context.mounted) Navigator.pop(context);
-                                    } catch (e) {
-                                      // Handle error?
-                                      isLoading.value = false;
-                                    }
+                                      } catch (e) {
+                                        isLoading.value = false;
+                                        errorText.value = ErrorMapper.getUserFriendlyError(e);
+                                      }
+                                  } else if (!isMatching.value) {
+                                    errorText.value =
+                                        'Passwords do not match. Please ensure both entries are identical.';
                                   }
                                 },
                           style: ElevatedButton.styleFrom(

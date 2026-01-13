@@ -22,6 +22,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart'; // Added Google Fonts
 import 'package:path_provider/path_provider.dart';
+import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -247,9 +249,15 @@ class FolderViewPage extends HookConsumerWidget {
                 },
                 error: (e, s) => SliverFillRemaining(
                   child: Center(
-                    child: Text(
-                      'Error: $e',
-                      style: const TextStyle(color: Colors.red),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: AutoSizeText(
+                        ErrorMapper.getUserFriendlyError(e),
+                        style: GoogleFonts.inter(color: Colors.red.shade300),
+                        textAlign: TextAlign.center,
+                        maxLines: 4,
+                        minFontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -437,12 +445,28 @@ class FolderViewPage extends HookConsumerWidget {
                         .whereType<String>()
                         .map((e) => File(e))
                         .toList();
+                        
+                    // Validate files before processing
+                    for (var f in files) {
+                      if (f.lengthSync() == 0) {
+                         _showError(context, "One of the selected files is empty and cannot be secured.");
+                         isProcessing.value = false;
+                         return;
+                      }
+                      // Example: Limit > 500MB (adjust as needed)
+                      if (f.lengthSync() > 500 * 1024 * 1024) {
+                         _showError(context, "One of the selected files is too large. Please select files under 500MB.");
+                         isProcessing.value = false;
+                         return;
+                      }
+                    }
+
                     if (files.isEmpty) return;
 
                     await _handleUpload(context, ref, files);
                   }
                 } catch (e) {
-                   debugPrint("Selection error: $e");
+                   _showError(context, ErrorMapper.getUserFriendlyError(e));
                 } finally {
                   isProcessing.value = false;
                 }
@@ -855,7 +879,7 @@ class _FileThumbnail extends HookConsumerWidget {
           if (isCancelled || !isMounted()) return;
 
           final meta = metaRes.getOrElse(
-            () => throw Exception("Decryption failed"),
+            () => throw Exception(ErrorMapper.getUserFriendlyError("Decryption failed")),
           );
           metadataState.value = meta;
 
@@ -1367,7 +1391,7 @@ class _FileThumbnail extends HookConsumerWidget {
       );
 
       final meta = metaRes.getOrElse(
-        () => throw Exception("Failed to decrypt metadata"),
+        () => throw Exception(ErrorMapper.getUserFriendlyError("Failed to decrypt metadata")),
       );
 
       // Check storage permission on Android

@@ -25,6 +25,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:excel/excel.dart' hide Border;
+import 'package:blindkey_app/presentation/utils/error_mapper.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 
 class FileViewPage extends HookConsumerWidget {
   final FileModel file;
@@ -47,9 +49,9 @@ class FileViewPage extends HookConsumerWidget {
         try {
           return await ref.read(trustedTimeServiceProvider).getTrustedTime();
         } catch (e) {
-          throw Exception(
-            "Internet connection is required to verify this shared file.",
-          );
+             // Let the error mapper handle the message presentation later
+             // But we need to propagate it
+          throw Exception(ErrorMapper.getUserFriendlyError(e));
         }
       }
       return null;
@@ -75,7 +77,9 @@ class FileViewPage extends HookConsumerWidget {
           trustedNow: trustedNow,
         );
 
-        return res.fold((l) => throw Exception(l.toString()), (meta) {
+        return res.fold(
+          (l) => throw Exception(ErrorMapper.getUserFriendlyError(l)), 
+          (meta) {
           // Fix for legacy files with "application/octet-stream"
           if (meta.mimeType == 'application/octet-stream') {
             final ext = meta.fileName.split('.').last.toLowerCase();
@@ -427,9 +431,15 @@ class FileViewPage extends HookConsumerWidget {
                     ),
                     child: fileDetails.hasError
                         ? Center(
-                            child: Text(
-                              'Error: ${fileDetails.error}',
-                              style: GoogleFonts.inter(color: Colors.red),
+                            child: Padding(
+                              padding: const EdgeInsets.all(20.0),
+                              child: AutoSizeText(
+                                ErrorMapper.getUserFriendlyError(fileDetails.error!),
+                                style: GoogleFonts.inter(color: Colors.red.shade300),
+                                textAlign: TextAlign.center,
+                                maxLines: 5,
+                                minFontSize: 12,
+                              ),
                             ),
                           )
                         : !fileDetails.hasData
@@ -821,9 +831,13 @@ Future<void> openExternally(
       // Invalidate file list to remove expired file
       ref.invalidate(fileNotifierProvider(file.folderId));
     }
+
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ErrorMapper.getUserFriendlyError(e), style: GoogleFonts.inter()),
+          backgroundColor: Colors.red.shade800,
+        ),
       );
     }
   }

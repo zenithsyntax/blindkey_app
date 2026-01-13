@@ -1,5 +1,6 @@
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
+import 'package:blindkey_app/presentation/utils/error_mapper.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'folder_notifier.g.dart';
@@ -41,7 +42,7 @@ class FolderNotifier extends _$FolderNotifier {
 
     final folder = currentState.firstWhere(
       (f) => f.id == id,
-      orElse: () => throw Exception("Folder not found"),
+      orElse: () => throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
     );
     final updatedFolder = folder.copyWith(name: newName);
 
@@ -84,7 +85,7 @@ class FolderNotifier extends _$FolderNotifier {
 
     final folder = currentState.firstWhere(
       (f) => f.id == folderId,
-      orElse: () => throw Exception("Folder not found"),
+      orElse: () => throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
     );
 
     final vault = ref.read(vaultServiceProvider);
