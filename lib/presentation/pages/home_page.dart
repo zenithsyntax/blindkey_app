@@ -94,6 +94,7 @@ class HomePage extends HookConsumerWidget {
 
               // Main content
               SafeArea(
+                minimum: const EdgeInsets.only(top: 30), // Fix for camera overlap
                 child: Column(
                   children: [
                     // Custom header - with responsive padding

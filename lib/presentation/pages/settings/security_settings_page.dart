@@ -31,19 +31,6 @@ class SecuritySettingsPage extends HookConsumerWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          'Security',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
       body: Stack(
         children: [
           // Background Gradient (Matches HomePage)
@@ -64,9 +51,38 @@ class SecuritySettingsPage extends HookConsumerWidget {
           ),
           
           SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.only(top: 24),
+            minimum: const EdgeInsets.only(top: 30), // Fix for camera overlap
+            child: Column(
               children: [
+                // Custom AppBar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.white),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Security',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 20, // Match standard AppBar size roughly
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 48), // Balance for leading icon
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.only(top: 10),
+                    children: [
                 _buildGlassTile(
                   child: SwitchListTile(
                     title: Text(
@@ -245,6 +261,9 @@ class SecuritySettingsPage extends HookConsumerWidget {
                 //     },
                 //   ),
                 // ),
+              ],
+                  ),
+                ),
               ],
             ),
           ),
