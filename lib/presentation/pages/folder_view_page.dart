@@ -26,6 +26,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
 import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
+import 'package:blindkey_app/application/services/upload_prefs_service.dart';
+import 'package:blindkey_app/presentation/dialogs/upload_info_dialog.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -310,7 +312,7 @@ class FolderViewPage extends HookConsumerWidget {
                         return Row(
                           children: [
                             const Icon(
-                              Icons.cloud_upload_rounded,
+                              Icons.upload_rounded,
                               size: 16,
                               color: Colors.white70,
                             ),
@@ -427,6 +429,26 @@ class FolderViewPage extends HookConsumerWidget {
                 style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
               onPressed: () async {
+                // Check if we need to show info
+                final shouldShow = await ref
+                    .read(uploadPrefsServiceProvider.notifier)
+                    .shouldShowUploadInfo();
+
+                if (shouldShow && context.mounted) {
+                  await showDialog(
+                    context: context,
+                    builder: (context) => UploadInfoDialog(
+                      onGotIt: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                  );
+                  // Mark as shown regardless of how it was closed (button or barrier)
+                  ref
+                      .read(uploadPrefsServiceProvider.notifier)
+                      .setUploadInfoShown();
+                }
+
                 isProcessing.value = true;
                 try {
                   // Small delay to ensure UI updates
@@ -450,9 +472,9 @@ class FolderViewPage extends HookConsumerWidget {
                          isProcessing.value = false;
                          return;
                       }
-                      // Example: Limit > 500MB (adjust as needed)
-                      if (f.lengthSync() > 500 * 1024 * 1024) {
-                         _showError(context, "One of the selected files is too large. Please select files under 500MB.");
+                      // Example: Limit > 1GB (adjust as needed)
+                      if (f.lengthSync() > 1024 * 1024 * 1024) {
+                         _showError(context, "One of the selected files is too large. Please select files under 1GB.");
                          isProcessing.value = false;
                          return;
                       }
