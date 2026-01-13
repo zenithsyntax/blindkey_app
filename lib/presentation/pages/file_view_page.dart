@@ -952,12 +952,22 @@ class _ImageView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 1. Safety Check: Memory Limit
+    if (fileSize > 50 * 1024 * 1024) {
+      return _TooLargeFileView(
+        fileName: file.id,
+        message: "Image is too large to render safely in-app.",
+        file: file,
+        folderKey: folderKey,
+      );
+    }
+
     final imageBytes = useState<Uint8List?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
 
     // View State
-    final rotationTurns = useState(0); // 0 = 0, 1 = 90, 2 = 180, 3 = 270
+    final rotationTurns = useState(0); 
     final showControls = useState(true);
 
     // Zoom State
@@ -1874,7 +1884,19 @@ class _TextView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 1. Check size limit
+    // Large text files (>10MB) will freeze UI during layout and consume massive RAM.
+    if (fileSize > 10 * 1024 * 1024) {
+      return _TooLargeFileView(
+         fileName: file.id,
+         message: "Text file is too large to view safely.",
+         file: file,
+         folderKey: folderKey,
+      );
+    }
+
     final textContent = useState<String?>(null);
+
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
 
@@ -2440,6 +2462,17 @@ class _SvgView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // 1. Check Limit
+    // SVG parsing is expensive and memory heavy. Limit to 5MB.
+    if (fileSize > 5 * 1024 * 1024) {
+      return _TooLargeFileView(
+        fileName: file.id, // Or name if available from parent, but this widget doesn't take name prop update
+        message: "SVG is too large to render safely.",
+        file: file,
+        folderKey: folderKey,
+      );
+    }
+
     final svgContent = useState<String?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
@@ -2467,7 +2500,16 @@ class _SvgView extends HookConsumerWidget {
             },
             onDone: () {
               if (!isCancelled) {
-                svgContent.value = utf8.decode(bytes);
+                // Additional safety check on decoded size?
+                if (bytes.length > 5 * 1024 * 1024) {
+                   error.value = "File grew too large during decryption.";
+                   return;
+                }
+                try {
+                  svgContent.value = utf8.decode(bytes);
+                } catch (e) {
+                   error.value = "Invalid text encoding.";
+                }
               }
             },
             onError: (e) {
@@ -2507,6 +2549,16 @@ class _ExcelView extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Excel parsing is also memory intensive. Limit to 20MB.
+    if (fileSize > 20 * 1024 * 1024) {
+      return _TooLargeFileView(
+        fileName: file.id,
+        message: "Spreadsheet is too large to render safely.",
+        file: file,
+        folderKey: folderKey,
+      );
+    }
+
     final excelData = useState<Excel?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
@@ -2603,6 +2655,79 @@ class _ExcelView extends HookConsumerWidget {
               }).toList(),
             );
           }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _TooLargeFileView extends ConsumerWidget {
+  final String fileName;
+  final String message;
+  final FileModel file;
+  final SecretKey folderKey;
+
+  const _TooLargeFileView({
+    required this.fileName,
+    required this.message,
+    required this.file,
+    required this.folderKey,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.05),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+              ),
+              child: const Icon(
+                Icons.memory_rounded,
+                size: 48,
+                color: Colors.redAccent,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "File Too Large",
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: Colors.white60,
+              ),
+            ),
+            const SizedBox(height: 32),
+            OutlinedButton.icon(
+               style: OutlinedButton.styleFrom(
+                 foregroundColor: Colors.white,
+                 side: const BorderSide(color: Colors.white24),
+                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+               ),
+               icon: const Icon(Icons.open_in_new_rounded),
+               label: const Text("Open Externally"),
+               onPressed: () async {
+                  await openExternally(context, ref, file, folderKey, fileName);
+               },
+            ),
+          ],
         ),
       ),
     );

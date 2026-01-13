@@ -1092,7 +1092,9 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
       if (await fileObj.exists()) {
         // We are moving ENCRYPTED file 'as-is' into the zip.
         // This is efficient (no re-encryption).
-        await encoder.addFile(fileObj, 'files/${item.id}.enc');
+        // Use Store (level 0) because encrypted data is not compressible.
+        // This prevents high memory usage from Deflate and speeds up export.
+        await encoder.addFile(fileObj, 'files/${item.id}.enc', 0);
       }
     }
 

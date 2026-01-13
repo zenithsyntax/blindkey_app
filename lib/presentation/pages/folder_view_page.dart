@@ -390,21 +390,24 @@ class FolderViewPage extends HookConsumerWidget {
       return;
     }
 
-    // 2. Check each file size (Max 100MB)
+    // 2. Check each file size (Max 1GB)
     int newBatchSize = 0;
+    const int maxFileSize = 1024 * 1024 * 1024; // 1GB in bytes
+    const int maxFolderSize = 2 * 1024 * 1024 * 1024; // 2GB in bytes
+
     for (final f in files) {
       final len = await f.length();
-      if (len > 100 * 1024 * 1024) {
+      if (len > maxFileSize) {
         _showError(
           context,
-          'File ${f.path.split(Platform.pathSeparator).last} is too large (>100MB).',
+          'File ${f.path.split(Platform.pathSeparator).last} is too large (>1GB).',
         );
         return;
       }
       newBatchSize += len;
     }
 
-    // 3. Check Folder Capacity (Max 500MB)
+    // 3. Check Folder Capacity (Max 2GB)
     final repo = ref.read(fileRepositoryProvider);
     final sizeRes = await repo.getFolderTotalSize(folder.id);
 
@@ -414,8 +417,8 @@ class FolderViewPage extends HookConsumerWidget {
         _showError(context, 'Could not verify folder quota.');
       },
       (currentSize) async {
-        if (currentSize + newBatchSize > 500 * 1024 * 1024) {
-          _showError(context, 'Folder capacity reached (500MB).');
+        if (currentSize + newBatchSize > maxFolderSize) {
+          _showError(context, 'Folder capacity reached (2GB).');
         } else {
           canUpload = true;
         }
@@ -423,8 +426,13 @@ class FolderViewPage extends HookConsumerWidget {
     );
 
     if (canUpload) {
-      // Show interstitial ad if conditions are met: file count < 10 and no file > 100MB
-      // (We already checked that no file is > 100MB above, so if we reach here, all files are <= 100MB)
+      // Show interstitial ad if conditions are met: file count < 10 and no file > 100MB (Keep legacy ad check or update? Let's keep ad check conservative at 100MB for now or update it?)
+      // User asked for "safe update". Changing ad logic might not be desired, but let's just leave the ad trigger condition as "files.length < 10" effectively since we removed the 100MB check inside the ad block?
+      // Wait, original code:
+      // if (files.length < 10) { ... }
+      // The original code comment said "no file > 100MB", but the logic just checked the length. The 100MB check was the return guard above.
+      // So if we reach here, we are good.
+      
       if (files.length < 10) {
         final adService = ref.read(adServiceProvider);
         adService.showImportFileInterstitialAd();

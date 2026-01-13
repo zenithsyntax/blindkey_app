@@ -586,10 +586,10 @@ class HomePage extends HookConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${stats.sizeString} / 500 MB',
+                            '${stats.sizeString} / 2 GB',
                             style: GoogleFonts.inter(
                               fontSize: 11,
-                              color: stats.totalSize > 500 * 1024 * 1024
+                              color: stats.totalSize > 2 * 1024 * 1024 * 1024
                                   ? Colors.red.shade300
                                   : Colors.white38,
                             ),
