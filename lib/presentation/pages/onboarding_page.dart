@@ -1,6 +1,7 @@
 import 'package:flutter_tilt/flutter_tilt.dart';
 import 'dart:ui';
 import 'dart:math' as math; // Added import
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:blindkey_app/presentation/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -110,11 +111,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   ),
                 ),
 
-                const Spacer(),
-
                 // Page View
-                SizedBox(
-                  height: 600, // Fixed height for carousel area
+                Expanded(
                   child: PageView.builder(
                     controller: _pageController,
                     onPageChanged: (index) {
@@ -129,9 +127,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   ),
                 ),
 
-                const Spacer(),
-
                 // Indicators
+                const SizedBox(height: 40),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
@@ -151,7 +148,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
 
                 // Main Button
                 Padding(
@@ -207,32 +204,35 @@ class _OnboardingPageState extends State<OnboardingPage> {
           // Mock Widget Container with 3D Tilt and Auto-Sway
           Expanded(
             child: Center(
-              child: _AutoTiltWrapper(
-                child: Tilt(
-                  borderRadius: BorderRadius.circular(32),
-                  tiltConfig: const TiltConfig(angle: 15),
-                  lightConfig: const LightConfig(
-                    disable: true,
-                  ),
-                  shadowConfig: const ShadowConfig(
-                    disable: true,
-                  ),
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 320, maxHeight: 400),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(32),
-                      boxShadow: [
-                        BoxShadow(
-                          color: item.color.withOpacity(0.15),
-                          blurRadius: 40,
-                          offset: const Offset(0, 20),
-                          spreadRadius: -10,
-                        ),
-                      ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: _AutoTiltWrapper(
+                  child: Tilt(
+                    borderRadius: BorderRadius.circular(32),
+                    tiltConfig: const TiltConfig(angle: 15),
+                    lightConfig: const LightConfig(
+                      disable: true,
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(32),
-                      child: item.mockWidget,
+                    shadowConfig: const ShadowConfig(
+                      disable: true,
+                    ),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 320, maxHeight: 400),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(32),
+                        boxShadow: [
+                          BoxShadow(
+                            color: item.color.withOpacity(0.15),
+                            blurRadius: 40,
+                            offset: const Offset(0, 20),
+                            spreadRadius: -10,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(32),
+                        child: item.mockWidget,
+                      ),
                     ),
                   ),
                 ),
@@ -240,13 +240,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
             ),
           ),
           
-          const SizedBox(height: 40),
+          const SizedBox(height: 24),
 
           
           // Typography
-          Text(
+          AutoSizeText(
             item.title,
             textAlign: TextAlign.center,
+            maxLines: 1,
             style: GoogleFonts.inter(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -258,9 +259,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
+            child: AutoSizeText(
               item.description,
               textAlign: TextAlign.center,
+              maxLines: 3,
+              minFontSize: 12,
               style: GoogleFonts.inter(
                 fontSize: 15,
                 color: Colors.white.withOpacity(0.6),
