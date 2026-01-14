@@ -89,13 +89,16 @@ class FolderViewPage extends HookConsumerWidget {
                   ),
                   onPressed: () => Navigator.pop(context),
                 ),
-                title: Text(
+                title: AutoSizeText(
                   folder.name,
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
                     letterSpacing: -0.5,
                   ),
+                  maxLines: 1,
+                  minFontSize: 16, // Keep it readable
+                  overflow: TextOverflow.ellipsis,
                 ),
                 centerTitle: false,
                 actions: [
@@ -286,7 +289,6 @@ class FolderViewPage extends HookConsumerWidget {
                 padding: EdgeInsets.only(bottom: 100),
               ), // Bottom spacing for FAB
               // Banner Ad moved to bottomNavigationBar
-
             ],
           ),
 
@@ -346,7 +348,7 @@ class FolderViewPage extends HookConsumerWidget {
                 ),
               ),
             ),
-        // File Selection Processing Overlay
+          // File Selection Processing Overlay
           if (isProcessing.value)
             Positioned.fill(
               child: Material(
@@ -383,8 +385,9 @@ class FolderViewPage extends HookConsumerWidget {
                               height: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 20),
@@ -412,9 +415,7 @@ class FolderViewPage extends HookConsumerWidget {
         color: const Color(0xFF0F0F0F),
         child: SafeArea(
           top: false,
-          child: BannerAdWidget(
-            adUnitId: AdService.folderViewBannerAdId,
-          ),
+          child: BannerAdWidget(adUnitId: AdService.folderViewBannerAdId),
         ),
       ),
       floatingActionButton: uploadProgress.isNotEmpty || hasExpiredFiles
@@ -464,19 +465,25 @@ class FolderViewPage extends HookConsumerWidget {
                         .whereType<String>()
                         .map((e) => File(e))
                         .toList();
-                        
+
                     // Validate files before processing
                     for (var f in files) {
                       if (f.lengthSync() == 0) {
-                         _showError(context, "One of the selected files is empty and cannot be secured.");
-                         isProcessing.value = false;
-                         return;
+                        _showError(
+                          context,
+                          "One of the selected files is empty and cannot be secured.",
+                        );
+                        isProcessing.value = false;
+                        return;
                       }
                       // Example: Limit > 1GB (adjust as needed)
                       if (f.lengthSync() > 1024 * 1024 * 1024) {
-                         _showError(context, "One of the selected files is too large. Please select files under 1GB.");
-                         isProcessing.value = false;
-                         return;
+                        _showError(
+                          context,
+                          "One of the selected files is too large. Please select files under 1GB.",
+                        );
+                        isProcessing.value = false;
+                        return;
                       }
                     }
 
@@ -485,7 +492,7 @@ class FolderViewPage extends HookConsumerWidget {
                     await _handleUpload(context, ref, files);
                   }
                 } catch (e) {
-                   _showError(context, ErrorMapper.getUserFriendlyError(e));
+                  _showError(context, ErrorMapper.getUserFriendlyError(e));
                 } finally {
                   isProcessing.value = false;
                 }
@@ -547,7 +554,7 @@ class FolderViewPage extends HookConsumerWidget {
       // if (files.length < 10) { ... }
       // The original code comment said "no file > 100MB", but the logic just checked the length. The 100MB check was the return guard above.
       // So if we reach here, we are good.
-      
+
       if (files.length < 10) {
         final adService = ref.read(adServiceProvider);
         adService.showImportFileInterstitialAd();
@@ -891,7 +898,9 @@ class _FileThumbnail extends HookConsumerWidget {
           if (isCancelled || !isMounted()) return;
 
           final meta = metaRes.getOrElse(
-            () => throw Exception(ErrorMapper.getUserFriendlyError("Decryption failed")),
+            () => throw Exception(
+              ErrorMapper.getUserFriendlyError("Decryption failed"),
+            ),
           );
           metadataState.value = meta;
 
@@ -1113,7 +1122,10 @@ class _FileThumbnail extends HookConsumerWidget {
                                       );
 
                                       if (context.mounted) {
-                                        CustomSnackbar.showSuccess(context, "File deleted");
+                                        CustomSnackbar.showSuccess(
+                                          context,
+                                          "File deleted",
+                                        );
                                       }
                                     },
                                     child: Text(
@@ -1386,7 +1398,9 @@ class _FileThumbnail extends HookConsumerWidget {
       );
 
       final meta = metaRes.getOrElse(
-        () => throw Exception(ErrorMapper.getUserFriendlyError("Failed to decrypt metadata")),
+        () => throw Exception(
+          ErrorMapper.getUserFriendlyError("Failed to decrypt metadata"),
+        ),
       );
 
       // Check storage permission on Android
@@ -1493,7 +1507,10 @@ class _FileThumbnail extends HookConsumerWidget {
 
       if (downloadDir == null) {
         if (context.mounted) {
-          CustomSnackbar.showError(context, "Could not access Downloads folder");
+          CustomSnackbar.showError(
+            context,
+            "Could not access Downloads folder",
+          );
         }
         return;
       }

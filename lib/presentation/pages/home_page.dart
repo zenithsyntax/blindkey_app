@@ -1,5 +1,6 @@
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
+import 'package:blindkey_app/application/services/file_intent_service.dart';
 import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
@@ -26,6 +27,7 @@ class HomePage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isImporting = useState(false);
     final foldersAsync = ref.watch(folderNotifierProvider);
     final termsState = ref.watch(termsNotifierProvider);
     final termsAccepted =
@@ -41,11 +43,19 @@ class HomePage extends HookConsumerWidget {
 
     final shouldShowTerms = !termsAccepted && !termsState.isLoading;
 
+    // Listen for external file intents (Open With)
+    ref.listen(fileIntentServiceProvider, (previous, path) {
+      if (path != null) {
+        // Clear the intent so we don't handle it again
+        ref.read(fileIntentServiceProvider.notifier).clearIntent();
+        // Handle the import
+        _handleImportIntent(context, ref, isImporting, path);
+      }
+    });
+
     final size = MediaQuery.of(context).size;
     final isTablet = size.width > 600;
     final isLargeScreen = size.width > 900;
-
-    final isImporting = useState(false);
 
     return Stack(
       children: [
@@ -94,11 +104,19 @@ class HomePage extends HookConsumerWidget {
 
               // Main content
               SafeArea(
-                minimum: const EdgeInsets.only(top: 30), // Fix for camera overlap
+                minimum: const EdgeInsets.only(
+                  top: 30,
+                ), // Fix for camera overlap
                 child: Column(
                   children: [
                     // Custom header - with responsive padding
-                    _buildHeader(context, ref, isTablet, isLargeScreen, isImporting),
+                    _buildHeader(
+                      context,
+                      ref,
+                      isTablet,
+                      isLargeScreen,
+                      isImporting,
+                    ),
 
                     // Content - flexible to prevent overflow
                     Expanded(
@@ -119,8 +137,10 @@ class HomePage extends HookConsumerWidget {
                             isLargeScreen,
                           );
                         },
-                        error: (e, s) =>
-                            _buildErrorState(ErrorMapper.getUserFriendlyError(e), isTablet),
+                        error: (e, s) => _buildErrorState(
+                          ErrorMapper.getUserFriendlyError(e),
+                          isTablet,
+                        ),
                         loading: () => Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -204,8 +224,9 @@ class HomePage extends HookConsumerWidget {
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -451,18 +472,29 @@ class HomePage extends HookConsumerWidget {
         // We define a fixed height that safely accommodates all content.
         // Base height 200 + adjustments for text scale.
         final textScale = MediaQuery.textScaleFactorOf(context);
-        final double baseHeight = 200.0; // Sufficient for Icon + Texts + Spacing
-        final double scaledHeight = baseHeight * (textScale > 1.0 ? (1.0 + (textScale - 1.0) * 0.5) : 1.0);
-        
+        final double baseHeight =
+            200.0; // Sufficient for Icon + Texts + Spacing
+        final double scaledHeight =
+            baseHeight *
+            (textScale > 1.0 ? (1.0 + (textScale - 1.0) * 0.5) : 1.0);
+
         // Calculate Aspect Ratio: ratio = width / height
-        final double childAspectRatio = (itemWidth / scaledHeight).clamp(0.5, 2.0);
+        final double childAspectRatio = (itemWidth / scaledHeight).clamp(
+          0.5,
+          2.0,
+        );
 
         return CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(padding, padding / 2, padding, padding / 2),
+                padding: EdgeInsets.fromLTRB(
+                  padding,
+                  padding / 2,
+                  padding,
+                  padding / 2,
+                ),
                 child: Row(
                   children: [
                     Text(
@@ -507,18 +539,12 @@ class HomePage extends HookConsumerWidget {
                 ),
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final folder = folders[index];
-                  return _buildModernVaultCard(
-                    context,
-                    ref,
-                    folder,
-                  );
+                  return _buildModernVaultCard(context, ref, folder);
                 }, childCount: folders.length),
               ),
             ),
             // Bottom padding to avoid FAB overlap
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 100),
-            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         );
       },
@@ -554,7 +580,9 @@ class HomePage extends HookConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(2), // Optional inner padding
+                      padding: const EdgeInsets.all(
+                        2,
+                      ), // Optional inner padding
                       decoration: BoxDecoration(
                         color: const Color(0xFF1A1A1A),
                         borderRadius: BorderRadius.circular(10),
@@ -570,7 +598,7 @@ class HomePage extends HookConsumerWidget {
                       ),
                     ),
                     SizedBox(
-                      width: 28, 
+                      width: 28,
                       height: 28,
                       child: PopupMenuButton<String>(
                         padding: EdgeInsets.zero,
@@ -582,7 +610,9 @@ class HomePage extends HookConsumerWidget {
                         color: const Color(0xFF1A1A1A),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.1),
+                          ),
                         ),
                         onSelected: (value) {
                           if (value == 'rename') {
@@ -596,9 +626,16 @@ class HomePage extends HookConsumerWidget {
                             value: 'rename',
                             child: Row(
                               children: [
-                                const Icon(Icons.edit_outlined, size: 18, color: Colors.white),
+                                const Icon(
+                                  Icons.edit_outlined,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
                                 const SizedBox(width: 12),
-                                Text('Rename', style: GoogleFonts.inter(color: Colors.white)),
+                                Text(
+                                  'Rename',
+                                  style: GoogleFonts.inter(color: Colors.white),
+                                ),
                               ],
                             ),
                           ),
@@ -606,9 +643,18 @@ class HomePage extends HookConsumerWidget {
                             value: 'delete',
                             child: Row(
                               children: [
-                                const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                                const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                  color: Colors.redAccent,
+                                ),
                                 const SizedBox(width: 12),
-                                Text('Delete', style: GoogleFonts.inter(color: Colors.redAccent)),
+                                Text(
+                                  'Delete',
+                                  style: GoogleFonts.inter(
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -617,9 +663,9 @@ class HomePage extends HookConsumerWidget {
                     ),
                   ],
                 ),
-                
+
                 const Spacer(),
-                
+
                 // Folder Name
                 Text(
                   folder.name,
@@ -632,13 +678,15 @@ class HomePage extends HookConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                
+
                 const SizedBox(height: 4),
-                
+
                 // Stats
                 Consumer(
                   builder: (context, ref, child) {
-                    final statsAsync = ref.watch(folderStatsProvider(folder.id));
+                    final statsAsync = ref.watch(
+                      folderStatsProvider(folder.id),
+                    );
                     return statsAsync.when(
                       data: (stats) => Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,21 +845,24 @@ class HomePage extends HookConsumerWidget {
   }
 
   Future<void> _importVault(
-      BuildContext context, WidgetRef ref, ValueNotifier<bool> isImporting) async {
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isImporting,
+  ) async {
     isImporting.value = true;
     try {
       // Using a small delay to allow the loading indicator to render before the platform channel hangs (if it does)
       await Future.delayed(const Duration(milliseconds: 100));
-      
+
       final result = await FilePicker.platform.pickFiles(type: FileType.any);
 
       if (result != null && result.files.single.path != null) {
         final path = result.files.single.path!;
-        
+
         if (!path.toLowerCase().endsWith('.blindkey')) {
           isImporting.value = false;
           if (context.mounted) {
-             CustomSnackbar.showError(
+            CustomSnackbar.showError(
               context,
               'Only .blindkey files can be uploaded. This file format is not supported.',
             );
@@ -820,193 +871,16 @@ class HomePage extends HookConsumerWidget {
         }
 
         if (!context.mounted) return;
-        
+
         isImporting.value = false;
 
-        await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => HookConsumer(
-          builder: (context, ref, child) {
-            final passwordController = useTextEditingController();
-            final isLoading = useState(false);
-            final errorText = useState<String?>(null);
-
-            return BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Dialog(
-                backgroundColor: const Color(0xFF1A1A1A),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: Colors.white.withOpacity(0.08)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(28),
-                  child: SingleChildScrollView(
-                    child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.upload_file_rounded,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Unlock Vault',
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Enter the password to access this vault file',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: Colors.white54,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      TextField(
-                        controller: passwordController,
-                        obscureText: true,
-                        enabled: !isLoading.value,
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: 'Password',
-                          hintStyle: GoogleFonts.inter(color: Colors.white30),
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.05),
-                          errorText: errorText.value,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          errorMaxLines: 3,
-                          prefixIcon: const Icon(
-                            Icons.lock_outline,
-                            color: Colors.white30,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: isLoading.value
-                              ? null
-                              : () async {
-                                  isLoading.value = true;
-                                  errorText.value = null;
-
-                                  await Future.delayed(
-                                    const Duration(milliseconds: 50),
-                                  );
-
-                                  try {
-                                    // Show interstitial ad before importing
-                                    final adService = ref.read(
-                                      adServiceProvider,
-                                    );
-                                    adService
-                                        .showImportBlindKeyInterstitialAd();
-
-                                    await ref
-                                        .read(folderNotifierProvider.notifier)
-                                        .importFolder(
-                                          path,
-                                          passwordController.text,
-                                        );
-
-                                      if (context.mounted) {
-                                        Navigator.pop(context);
-                                        CustomSnackbar.showSuccess(
-                                          context,
-                                          'Vault imported successfully',
-                                        );
-                                      }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      isLoading.value = false;
-
-                                      errorText.value = ErrorMapper.getUserFriendlyError(e);
-
-                                      // Ensure provider state is refreshed to clear any error state
-                                      // This prevents "unable to load vaults" error from persisting
-                                      ref.invalidate(folderNotifierProvider);
-                                    }
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            disabledBackgroundColor: Colors.white24,
-                            disabledForegroundColor: Colors.white38,
-                          ),
-                          child: isLoading.value
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white70,
-                                  ),
-                                )
-                              : Text(
-                                  'Unlock & Import',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      if (isLoading.value) ...[
-                        const SizedBox(height: 16),
-                        TextButton(
-                          onPressed:
-                              null, // Cannot cancel easily during import if it's atomic
-                          child: Text(
-                            "Importing...",
-                            style: GoogleFonts.inter(color: Colors.white30),
-                          ),
-                        ),
-                      ] else ...[
-                        const SizedBox(height: 16),
-                        TextButton(
-                          onPressed: () {
-                            // Refresh provider state when canceling to ensure no error state persists
-                            ref.invalidate(folderNotifierProvider);
-                            Navigator.pop(context);
-                          },
-                          child: Text(
-                            "Cancel",
-                            style: GoogleFonts.inter(color: Colors.white54),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                ),
-              ),
-            );
-          },
-        ),
-      );
+        await _showImportPasswordDialog(context, ref, path);
+      }
+    } catch (e) {
+      debugPrint("Import Error: $e");
+    } finally {
+      isImporting.value = false;
     }
-  } catch (e) {
-    debugPrint("Import Error: $e");
-  } finally {
-    isImporting.value = false;
-  }
   }
 
   void _openFolder(BuildContext context, WidgetRef ref, dynamic folder) {
@@ -1025,6 +899,7 @@ class HomePage extends HookConsumerWidget {
           final passwordController = useTextEditingController();
           final isLoading = useState(false);
           final errorText = useState<String?>(null);
+          final isObscured = useState(true);
 
           return BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -1038,179 +913,198 @@ class HomePage extends HookConsumerWidget {
                 padding: const EdgeInsets.all(28),
                 child: SingleChildScrollView(
                   child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.lock_rounded,
-                        size: 32,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Unlock Vault',
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      folder.name,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: Colors.white54,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    TextField(
-                      controller: passwordController,
-                      obscureText: true,
-                      enabled: !isLoading.value,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Enter Password',
-                        hintStyle: GoogleFonts.inter(color: Colors.white30),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.05),
-                        errorText: errorText.value,
-                        errorMaxLines: 2,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          shape: BoxShape.circle,
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white.withOpacity(0.2),
+                        child: const Icon(
+                          Icons.lock_rounded,
+                          size: 32,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Unlock Vault',
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        folder.name,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: isObscured.value,
+                        enabled: !isLoading.value,
+                        style: GoogleFonts.inter(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Enter Password',
+                          hintStyle: GoogleFonts.inter(color: Colors.white30),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.05),
+                          errorText: errorText.value,
+                          errorMaxLines: 2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.key_rounded,
-                          color: Colors.white30,
-                        ),
-                      ),
-                      onSubmitted: (_) {
-                        // Trigger unlock on enter
-                        if (!isLoading.value) {
-                          // ... duplicate logic or call function
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 32),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            onPressed: isLoading.value
-                                ? null
-                                : () => Navigator.pop(context),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white60,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              'Cancel',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w500,
-                              ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Colors.white.withOpacity(0.2),
                             ),
                           ),
+                          prefixIcon: const Icon(
+                            Icons.key_rounded,
+                            color: Colors.white30,
+                          ),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              isObscured.value
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              color: Colors.white30,
+                            ),
+                            onPressed: () {
+                              isObscured.value = !isObscured.value;
+                            },
+                          ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: isLoading.value
-                                ? null
-                                : () async {
-                                    isLoading.value = true;
-                                    errorText.value = null;
+                        onSubmitted: (_) {
+                          // Trigger unlock on enter
+                          if (!isLoading.value) {
+                            // ... duplicate logic or call function
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 32),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: isLoading.value
+                                  ? null
+                                  : () => Navigator.pop(context),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.white60,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: isLoading.value
+                                  ? null
+                                  : () async {
+                                      isLoading.value = true;
+                                      errorText.value = null;
 
-                                    // Slight delay to ensure UI updates to loading state before potential heavy crypto work
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 50),
-                                    );
+                                      // Slight delay to ensure UI updates to loading state before potential heavy crypto work
+                                      await Future.delayed(
+                                        const Duration(milliseconds: 50),
+                                      );
 
-                                    try {
-                                      final result = await ref
-                                          .read(folderNotifierProvider.notifier)
-                                          .unlockFolder(
-                                            folder.id,
-                                            passwordController.text,
-                                          );
+                                      try {
+                                        final result = await ref
+                                            .read(
+                                              folderNotifierProvider.notifier,
+                                            )
+                                            .unlockFolder(
+                                              folder.id,
+                                              passwordController.text,
+                                            );
 
-                                      if (context.mounted) {
-                                        if (result != null &&
-                                            result is SecretKey) {
-                                          Navigator.pop(context);
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) =>
-                                                  FolderViewPage(
-                                                    folder: folder,
-                                                    folderKey: result,
-                                                  ),
-                                            ),
-                                          );
-                                        } else {
+                                        if (context.mounted) {
+                                          if (result != null &&
+                                              result is SecretKey) {
+                                            Navigator.pop(context);
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    FolderViewPage(
+                                                      folder: folder,
+                                                      folderKey: result,
+                                                    ),
+                                              ),
+                                            );
+                                          } else {
+                                            isLoading.value = false;
+                                            errorText.value =
+                                                'Incorrect password';
+                                            passwordController.clear();
+                                          }
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
                                           isLoading.value = false;
                                           errorText.value =
-                                              'Incorrect password';
-                                          passwordController.clear();
+                                              ErrorMapper.getUserFriendlyError(
+                                                e,
+                                              );
                                         }
                                       }
-                                    } catch (e) {
-                                      if (context.mounted) {
-                                        isLoading.value = false;
-                                        errorText.value =
-                                            ErrorMapper.getUserFriendlyError(e);
-                                      }
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                disabledBackgroundColor: Colors.white24,
+                                disabledForegroundColor: Colors.white38,
                               ),
-                              disabledBackgroundColor: Colors.white24,
-                              disabledForegroundColor: Colors.white38,
+                              child: isLoading.value
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white70,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Unlock',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                             ),
-                            child: isLoading.value
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white70,
-                                    ),
-                                  )
-                                : Text(
-                                    'Unlock',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1283,13 +1177,13 @@ class HomePage extends HookConsumerWidget {
                                   .renameFolder(folder.id, controller.text);
                               if (context.mounted) Navigator.pop(context);
                             } catch (e) {
-                                if (context.mounted) {
-                                  Navigator.pop(context); 
-                                  CustomSnackbar.showError(
-                                    context,
-                                    ErrorMapper.getUserFriendlyError(e),
-                                  );
-                                }
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                CustomSnackbar.showError(
+                                  context,
+                                  ErrorMapper.getUserFriendlyError(e),
+                                );
+                              }
                             }
                           }
                         },
@@ -1351,7 +1245,7 @@ class HomePage extends HookConsumerWidget {
                       .deleteFolder(folder.id);
                   if (context.mounted) Navigator.pop(context);
                 } catch (e) {
-                   if (context.mounted) {
+                  if (context.mounted) {
                     Navigator.pop(context);
                     CustomSnackbar.showError(
                       context,
@@ -1373,4 +1267,231 @@ class HomePage extends HookConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _handleImportIntent(
+  BuildContext context,
+  WidgetRef ref,
+  ValueNotifier<bool> isImporting,
+  String path,
+) async {
+  isImporting.value = true;
+  try {
+    // Small delay for UI stability
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (!path.toLowerCase().endsWith('.blindkey')) {
+      isImporting.value = false;
+      if (context.mounted) {
+        CustomSnackbar.showError(
+          context,
+          'Invalid file type. Only .blindkey files are supported.',
+        );
+      }
+      return;
+    }
+
+    if (context.mounted) {
+      isImporting.value = false;
+      _showImportPasswordDialog(context, ref, path);
+    }
+  } catch (e) {
+    isImporting.value = false;
+    debugPrint("Intent Import Error: $e");
+  }
+}
+
+Future<void> _showImportPasswordDialog(
+  BuildContext context,
+  WidgetRef ref,
+  String path,
+) async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => HookConsumer(
+      builder: (context, ref, child) {
+        final passwordController = useTextEditingController();
+        final isLoading = useState(false);
+        final errorText = useState<String?>(null);
+        final isObscured = useState(true);
+
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Dialog(
+            backgroundColor: const Color(0xFF1A1A1A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.upload_file_rounded,
+                      size: 48,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Unlock Vault',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter the password to access this vault file',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: isObscured.value,
+                      enabled: !isLoading.value,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Password',
+                        hintStyle: GoogleFonts.inter(color: Colors.white30),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        errorText: errorText.value,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        errorMaxLines: 3,
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Colors.white30,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            isObscured.value
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: Colors.white30,
+                          ),
+                          onPressed: () {
+                            isObscured.value = !isObscured.value;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isLoading.value
+                            ? null
+                            : () async {
+                                isLoading.value = true;
+                                errorText.value = null;
+
+                                await Future.delayed(
+                                  const Duration(milliseconds: 50),
+                                );
+
+                                try {
+                                  // Show interstitial ad before importing
+                                  final adService = ref.read(adServiceProvider);
+                                  adService.showImportBlindKeyInterstitialAd();
+
+                                  await ref
+                                      .read(folderNotifierProvider.notifier)
+                                      .importFolder(
+                                        path,
+                                        passwordController.text,
+                                      );
+
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    CustomSnackbar.showSuccess(
+                                      context,
+                                      'Vault imported successfully',
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    isLoading.value = false;
+
+                                    errorText.value =
+                                        ErrorMapper.getUserFriendlyError(e);
+
+                                    // Ensure provider state is refreshed to clear any error state
+                                    // This prevents "unable to load vaults" error from persisting
+                                    ref.invalidate(folderNotifierProvider);
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBackgroundColor: Colors.white24,
+                          disabledForegroundColor: Colors.white38,
+                        ),
+                        child: isLoading.value
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70,
+                                ),
+                              )
+                            : Text(
+                                'Unlock & Import',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                    if (isLoading.value) ...[
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed:
+                            null, // Cannot cancel easily during import if it's atomic
+                        child: Text(
+                          "Importing...",
+                          style: GoogleFonts.inter(color: Colors.white30),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
+                          // Refresh provider state when canceling to ensure no error state persists
+                          ref.invalidate(folderNotifierProvider);
+                          Navigator.pop(context);
+                        },
+                        child: Text(
+                          "Cancel",
+                          style: GoogleFonts.inter(color: Colors.white54),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }
