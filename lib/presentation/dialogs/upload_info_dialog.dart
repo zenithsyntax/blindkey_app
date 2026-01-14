@@ -58,7 +58,7 @@ class UploadInfoDialog extends StatelessWidget {
               _buildInfoRow(
                 Icons.file_copy_rounded,
                 'File Batch Limit',
-                'Upload up to 10 files at a time.',
+                'Upload up to 30 files at a time.',
               ),
               const SizedBox(height: 16),
               _buildInfoRow(

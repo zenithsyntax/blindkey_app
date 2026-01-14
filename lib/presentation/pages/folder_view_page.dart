@@ -310,7 +310,7 @@ class FolderViewPage extends HookConsumerWidget {
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      children: uploadProgress.entries.map((e) {
+                      children: uploadProgress.entries.take(5).map((e) {
                         return Row(
                           children: [
                             const Icon(
@@ -507,8 +507,8 @@ class FolderViewPage extends HookConsumerWidget {
     List<File> files,
   ) async {
     // 1. Check Max Files per Batch
-    if (files.length > 10) {
-      _showError(context, 'You can only select up to 10 files at a time.');
+    if (files.length > 30) {
+      _showError(context, 'You can only select up to 30 files at a time.');
       return;
     }
 
@@ -555,7 +555,7 @@ class FolderViewPage extends HookConsumerWidget {
       // The original code comment said "no file > 100MB", but the logic just checked the length. The 100MB check was the return guard above.
       // So if we reach here, we are good.
 
-      if (files.length < 10) {
+      if (files.length < 30) {
         final adService = ref.read(adServiceProvider);
         adService.showImportFileInterstitialAd();
       }
