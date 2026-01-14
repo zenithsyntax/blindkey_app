@@ -50,8 +50,8 @@ class FileViewPage extends HookConsumerWidget {
         try {
           return await ref.read(trustedTimeServiceProvider).getTrustedTime();
         } catch (e) {
-             // Let the error mapper handle the message presentation later
-             // But we need to propagate it
+          // Let the error mapper handle the message presentation later
+          // But we need to propagate it
           throw Exception(ErrorMapper.getUserFriendlyError(e));
         }
       }
@@ -78,9 +78,9 @@ class FileViewPage extends HookConsumerWidget {
           trustedNow: trustedNow,
         );
 
-        return res.fold(
-          (l) => throw Exception(ErrorMapper.getUserFriendlyError(l)), 
-          (meta) {
+        return res.fold((l) => throw Exception(ErrorMapper.getUserFriendlyError(l)), (
+          meta,
+        ) {
           // Fix for legacy files with "application/octet-stream"
           if (meta.mimeType == 'application/octet-stream') {
             final ext = meta.fileName.split('.').last.toLowerCase();
@@ -191,6 +191,7 @@ class FileViewPage extends HookConsumerWidget {
     // Track system UI visibility (status bar and navigation bar)
     // Start with UI hidden (fullscreen mode)
     final showSystemUI = useState<bool>(false);
+    final isSaving = useState(false);
 
     // Hide/show system UI based on state
     useEffect(() {
@@ -280,81 +281,100 @@ class FileViewPage extends HookConsumerWidget {
               ),
               actions: [
                 if (allowSave) // Only if permitted
-                  IconButton(
-                    icon: const Icon(
-                      Icons.open_in_new_rounded,
-                      color: Colors.white70,
-                    ),
-                    tooltip: 'Open in External App',
-                    onPressed: () async {
-                      if (!fileDetails.hasData) return;
-
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                          child: AlertDialog(
-                            backgroundColor: const Color(0xFF1A1A1A),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                              side: BorderSide(
-                                color: Colors.white.withOpacity(0.08),
-                              ),
-                            ),
-                            title: Text(
-                              "Leave Secure Vault?",
-                              style: GoogleFonts.inter(
-                                fontSize: 18,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            content: Text(
-                              'You are about to open this file externally.\n\n'
-                              '• Screenshot protection will be LOST.\n'
-                              '• The file will be decrypted temporarily.\n\n'
-                              'Proceed?',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: Colors.white70,
-                              ),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: Text(
-                                  'Cancel',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: Text(
-                                  'Open Externally',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                  if (isSaving.value)
+                    const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
                         ),
-                      );
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(
+                        Icons.open_in_new_rounded,
+                        color: Colors.white70,
+                      ),
+                      tooltip: 'Open in External App',
+                      onPressed: () async {
+                        if (!fileDetails.hasData) return;
 
-                      if (confirm != true) return;
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                            child: AlertDialog(
+                              backgroundColor: const Color(0xFF1A1A1A),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: BorderSide(
+                                  color: Colors.white.withOpacity(0.08),
+                                ),
+                              ),
+                              title: Text(
+                                "Leave Secure Vault?",
+                                style: GoogleFonts.inter(
+                                  fontSize: 18,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              content: Text(
+                                'You are about to open this file externally.\n\n'
+                                '• Screenshot protection will be LOST.\n'
+                                '• The file will be decrypted temporarily.\n\n'
+                                'Proceed?',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: Text(
+                                    'Cancel',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: Text(
+                                    'Open Externally',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
 
-                      await openExternally(
-                        context,
-                        ref,
-                        file,
-                        folderKey,
-                        fileDetails.data!.fileName,
-                      );
-                    },
-                  ),
+                        if (confirm != true) return;
+
+                        isSaving.value = true;
+                        try {
+                          await openExternally(
+                            context,
+                            ref,
+                            file,
+                            folderKey,
+                            fileDetails.data!.fileName,
+                          );
+                        } finally {
+                          isSaving.value = false;
+                        }
+                      },
+                    ),
               ],
             ),
       body: OrientationBuilder(
@@ -435,8 +455,12 @@ class FileViewPage extends HookConsumerWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(20.0),
                               child: AutoSizeText(
-                                ErrorMapper.getUserFriendlyError(fileDetails.error!),
-                                style: GoogleFonts.inter(color: Colors.red.shade300),
+                                ErrorMapper.getUserFriendlyError(
+                                  fileDetails.error!,
+                                ),
+                                style: GoogleFonts.inter(
+                                  color: Colors.red.shade300,
+                                ),
                                 textAlign: TextAlign.center,
                                 maxLines: 5,
                                 minFontSize: 12,
@@ -550,7 +574,8 @@ class FileViewPage extends HookConsumerWidget {
                                                                         fileName: fileDetails
                                                                             .data!
                                                                             .fileName,
-                                                                        allowSave: allowSave,
+                                                                        allowSave:
+                                                                            allowSave,
                                                                       )
                                                                     : (fileDetails.data!.mimeType.contains('presentation') ||
                                                                               fileDetails.data!.mimeType.contains('powerpoint')
@@ -811,7 +836,10 @@ Future<void> openExternally(
     if (res.type != ResultType.done) {
       if (context.mounted) {
         // PROFESSIONAL: Removed "Error: " prefix, let CustomSnackbar style handle it
-        CustomSnackbar.showError(context, "Could not open file: ${res.message}");
+        CustomSnackbar.showError(
+          context,
+          "Could not open file: ${res.message}",
+        );
       }
     }
   } catch (e) {
@@ -824,12 +852,12 @@ Future<void> openExternally(
     }
 
     if (context.mounted) {
-       CustomSnackbar.showError(context, ErrorMapper.getUserFriendlyError(e));
+      CustomSnackbar.showError(context, ErrorMapper.getUserFriendlyError(e));
     }
   }
 }
 
-class _UnsupportedFileView extends ConsumerWidget {
+class _UnsupportedFileView extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final String fileName;
@@ -844,6 +872,7 @@ class _UnsupportedFileView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isSaving = useState(false);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -874,9 +903,23 @@ class _UnsupportedFileView extends ConsumerWidget {
             const SizedBox(height: 32),
             if (allowSave)
               OutlinedButton.icon(
-                onPressed: () {
-                  openExternally(context, ref, file, folderKey, fileName);
-                },
+                onPressed: isSaving.value
+                    ? () {}
+                    : () async {
+                        isSaving.value = true;
+                        try {
+                          await openExternally(
+                            
+                            context,
+                            ref,
+                            file,
+                            folderKey,
+                            fileName,
+                          );
+                        } finally {
+                          isSaving.value = false;
+                        }
+                      },
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.white24),
                   padding: const EdgeInsets.symmetric(
@@ -887,7 +930,16 @@ class _UnsupportedFileView extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                icon: isSaving.value
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      )
+                    : const Icon(Icons.open_in_new_rounded, size: 18),
                 label: Text("Open Externally", style: GoogleFonts.inter()),
               )
             else
@@ -965,9 +1017,10 @@ class _ImageView extends HookConsumerWidget {
     final imageBytes = useState<Uint8List?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
+    final isSaving = useState(false);
 
     // View State
-    final rotationTurns = useState(0); 
+    final rotationTurns = useState(0);
     final showControls = useState(true);
 
     // Zoom State
@@ -1167,42 +1220,44 @@ class _ImageView extends HookConsumerWidget {
                 const Spacer(),
                 // File info could go here
                 if (allowSave)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.open_in_new_rounded,
-                      color: Colors.white,
+                  if (isSaving.value)
+                    const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(
+                        Icons.open_in_new_rounded,
+                        color: Colors.white,
+                      ),
+                      tooltip: 'Open Externally',
+                      onPressed: () async {
+                        if (trustedNow != null) {
+                          // Optional: check expiry again?
+                        }
+
+                        isSaving.value = true;
+                        try {
+                          await openExternally(
+                            context,
+                            ref,
+                            file,
+                            folderKey,
+                            "image",
+                          );
+                        } finally {
+                          isSaving.value = false;
+                        }
+                      },
                     ),
-                    tooltip: 'Open Externally',
-                    onPressed: () async {
-                      if (trustedNow != null) {
-                        // Optional: check expiry again?
-                      }
-                      // Reuse the global openExternally function
-                      // Need to check if file model has fileName, usually it does or we got it from meta
-                      // helper.
-
-                      // We need the filename. The 'file' model might not have the decrypted name.
-                      // But openExternally takes 'fileName'.
-                      // We don't have easy access to the decrypted filename here unless we pass it
-                      // or decrypt it again (cheap metadata).
-                      // In FileViewPage we had fileDetails.data.
-                      // We should probably pass fileName to _ImageView to be safe/efficient.
-                      // For now, let's try to use file.fileName if available or "image"
-                      // checking openExternally signature: needs fileName.
-
-                      await openExternally(
-                        context,
-                        ref,
-                        file,
-                        folderKey,
-                        // Fallback or re-fetch?
-                        // best to use a default or handle inside.
-                        // Let's modify _ImageView to accept fileName to be clean.
-                        // We already identified this earlier.
-                        "image",
-                      );
-                    },
-                  ),
               ],
             ),
           ),
@@ -1471,7 +1526,7 @@ class _VideoView extends HookConsumerWidget {
 
 class _VideoPlayerView extends StatefulWidget {
   final String filePath;
-  final VoidCallback onOpenExternal;
+  final Future<void> Function() onOpenExternal;
   final bool isAdLoaded;
   final bool allowSave;
 
@@ -1494,6 +1549,7 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
   Timer? _hideTimer;
   bool _isLandscape = false;
   bool _controlsLocked = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -1715,14 +1771,36 @@ class _VideoPlayerViewState extends State<_VideoPlayerView> {
                               },
                             ),
                             if (widget.allowSave)
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.open_in_new_rounded,
-                                  color: Colors.white,
+                              if (_isSaving)
+                                const Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                )
+                              else
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.open_in_new_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  tooltip: 'Open Externally',
+                                  onPressed: () async {
+                                    setState(() => _isSaving = true);
+                                    try {
+                                      await widget.onOpenExternal();
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => _isSaving = false);
+                                      }
+                                    }
+                                  },
                                 ),
-                                tooltip: 'Open Externally',
-                                onPressed: widget.onOpenExternal,
-                              ),
                           ],
                         ),
                       ),
@@ -1888,10 +1966,10 @@ class _TextView extends HookConsumerWidget {
     // Large text files (>10MB) will freeze UI during layout and consume massive RAM.
     if (fileSize > 10 * 1024 * 1024) {
       return _TooLargeFileView(
-         fileName: file.id,
-         message: "Text file is too large to view safely.",
-         file: file,
-         folderKey: folderKey,
+        fileName: file.id,
+        message: "Text file is too large to view safely.",
+        file: file,
+        folderKey: folderKey,
       );
     }
 
@@ -2466,7 +2544,8 @@ class _SvgView extends HookConsumerWidget {
     // SVG parsing is expensive and memory heavy. Limit to 5MB.
     if (fileSize > 5 * 1024 * 1024) {
       return _TooLargeFileView(
-        fileName: file.id, // Or name if available from parent, but this widget doesn't take name prop update
+        fileName: file
+            .id, // Or name if available from parent, but this widget doesn't take name prop update
         message: "SVG is too large to render safely.",
         file: file,
         folderKey: folderKey,
@@ -2502,13 +2581,13 @@ class _SvgView extends HookConsumerWidget {
               if (!isCancelled) {
                 // Additional safety check on decoded size?
                 if (bytes.length > 5 * 1024 * 1024) {
-                   error.value = "File grew too large during decryption.";
-                   return;
+                  error.value = "File grew too large during decryption.";
+                  return;
                 }
                 try {
                   svgContent.value = utf8.decode(bytes);
                 } catch (e) {
-                   error.value = "Invalid text encoding.";
+                  error.value = "Invalid text encoding.";
                 }
               }
             },
@@ -2708,24 +2787,26 @@ class _TooLargeFileView extends ConsumerWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.white60,
-              ),
+              style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
             ),
             const SizedBox(height: 32),
             OutlinedButton.icon(
-               style: OutlinedButton.styleFrom(
-                 foregroundColor: Colors.white,
-                 side: const BorderSide(color: Colors.white24),
-                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-               ),
-               icon: const Icon(Icons.open_in_new_rounded),
-               label: const Text("Open Externally"),
-               onPressed: () async {
-                  await openExternally(context, ref, file, folderKey, fileName);
-               },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: const Text("Open Externally"),
+              onPressed: () async {
+                await openExternally(context, ref, file, folderKey, fileName);
+              },
             ),
           ],
         ),

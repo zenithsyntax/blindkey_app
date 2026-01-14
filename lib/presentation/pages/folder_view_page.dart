@@ -1617,6 +1617,7 @@ class _ExportProgressDialog extends HookConsumerWidget {
     // New state for Save feedback
     final saveMessage = useState<String?>(null);
     final isSaveError = useState(false);
+    final isSavingToDownloads = useState(false);
 
     useEffect(() {
       final vault = ref.read(vaultServiceProvider);
@@ -1804,25 +1805,43 @@ class _ExportProgressDialog extends HookConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         ElevatedButton.icon(
-                          onPressed: () async {
-                            // Use modified saving logic
-                            final msg = await _saveToDownloads(
-                              context,
-                              resultPath.value!,
-                            );
-                            if (msg.startsWith("Error:")) {
-                              saveMessage.value = msg
-                                  .substring(6)
-                                  .trim(); // Remove "Error:" prefix
-                              isSaveError.value = true;
-                            } else {
-                              saveMessage.value = msg;
-                              isSaveError.value = false;
-                            }
-                          },
-                          icon: const Icon(Icons.download_rounded, size: 18),
+                          onPressed: isSavingToDownloads.value
+                              ? () {}
+                              : () async {
+                                  isSavingToDownloads.value = true;
+                                  try {
+                                    // Use modified saving logic
+                                    final msg = await _saveToDownloads(
+                                      context,
+                                      resultPath.value!,
+                                    );
+                                    if (msg.startsWith("Error:")) {
+                                      saveMessage.value = msg
+                                          .substring(6)
+                                          .trim(); // Remove "Error:" prefix
+                                      isSaveError.value = true;
+                                    } else {
+                                      saveMessage.value = msg;
+                                      isSaveError.value = false;
+                                    }
+                                  } finally {
+                                    isSavingToDownloads.value = false;
+                                  }
+                                },
+                          icon: isSavingToDownloads.value
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black,
+                                  ),
+                                )
+                              : const Icon(Icons.download_rounded, size: 18),
                           label: Text(
-                            "Save to Downloads",
+                            isSavingToDownloads.value
+                                ? "Saving..."
+                                : "Save to Downloads",
                             style: GoogleFonts.inter(
                               fontWeight: FontWeight.w600,
                             ),
