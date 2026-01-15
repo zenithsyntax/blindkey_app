@@ -1,4 +1,3 @@
-
 import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/application/services/trusted_time_service.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
@@ -12,6 +11,7 @@ import 'package:blindkey_app/infrastructure/storage/file_storage_service.dart';
 import 'package:blindkey_app/infrastructure/storage/secure_storage_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:blindkey_app/application/services/thumbnail_service.dart';
 
 part 'providers.g.dart';
 
@@ -46,9 +46,9 @@ FileStorageService fileStorageService(FileStorageServiceRef ref) {
 @riverpod
 MetadataRepository metadataRepository(MetadataRepositoryRef ref) {
   // Required for FileRepo
-  return MetadataRepository(); 
+  return MetadataRepository();
   // Ideally single instance if it holds DB connection?
-  // MetadataRepository implementation handles singleton DB via `_database` field? 
+  // MetadataRepository implementation handles singleton DB via `_database` field?
   // Wait, `MetadataRepository` logic: `Database? _database; Future<Database> get database async`.
   // If we create new instance every time, `_database` will be null, and it will try to `openDatabase` again.
   // Sqflite `openDatabase` handles multiple connections usually, but it's better to keep one instance.
@@ -68,7 +68,9 @@ CryptographyService cryptographyService(CryptographyServiceRef ref) {
 
 @riverpod
 FileRepository fileRepository(FileRepositoryRef ref) {
-  final metadataRepo = ref.watch(sharedMetadataRepositoryProvider); // Use shared!
+  final metadataRepo = ref.watch(
+    sharedMetadataRepositoryProvider,
+  ); // Use shared!
   final storage = ref.watch(fileStorageServiceProvider);
   return FileRepositoryImpl(metadataRepo, storage);
 }
@@ -82,8 +84,13 @@ VaultService vaultService(VaultServiceRef ref) {
     ref.watch(cryptographyServiceProvider),
     ref.watch(fileStorageServiceProvider),
     ref.watch(trustedTimeServiceProvider),
+    ref.watch(thumbnailServiceProvider),
   );
 }
+
+final thumbnailServiceProvider = Provider<ThumbnailService>((ref) {
+  return ThumbnailService();
+});
 
 @riverpod
 FolderRepository folderRepositoryImpl(FolderRepositoryImplRef ref) {

@@ -17,6 +17,7 @@ import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import 'package:blindkey_app/application/services/trusted_time_service.dart';
+import 'package:blindkey_app/application/services/thumbnail_service.dart';
 
 abstract class ExportStatus {}
 
@@ -42,6 +43,7 @@ class VaultService {
   final CryptographyService _cryptoService;
   final FileStorageService _storageService;
   final TrustedTimeService _trustedTimeService;
+  final ThumbnailService _thumbnailService;
 
   VaultService(
     this._folderRepository,
@@ -49,6 +51,7 @@ class VaultService {
     this._cryptoService,
     this._storageService,
     this._trustedTimeService,
+    this._thumbnailService,
   );
 
   Future<Either<Failure, Unit>> createFolder(
@@ -147,77 +150,86 @@ class VaultService {
     try {
       // 1. Verify Old Password & Get Old Key
       final oldKeyRes = await verifyPasswordAndGetKey(folder, oldPassword);
-      return oldKeyRes.fold(
-        (l) => left(l),
-        (oldKey) async {
-          // 2. Generate New Salt & New Key
-          final newSalt = await _cryptoService.generateRandomKey().then((k) => k.extractBytes());
-          final newKey = await _cryptoService.deriveKeyFromPassword(newPassword, newSalt);
+      return oldKeyRes.fold((l) => left(l), (oldKey) async {
+        // 2. Generate New Salt & New Key
+        final newSalt = await _cryptoService.generateRandomKey().then(
+          (k) => k.extractBytes(),
+        );
+        final newKey = await _cryptoService.deriveKeyFromPassword(
+          newPassword,
+          newSalt,
+        );
 
-          // 3. Get All Files
-          final filesRes = await _fileRepository.getFiles(folder.id);
-          if (filesRes.isLeft()) {
-              return left(const Failure.unexpected("Could not access files"));
-          }
-          final files = filesRes.getOrElse(() => []);
+        // 3. Get All Files
+        final filesRes = await _fileRepository.getFiles(folder.id);
+        if (filesRes.isLeft()) {
+          return left(const Failure.unexpected("Could not access files"));
+        }
+        final files = filesRes.getOrElse(() => []);
 
-          // 4. Re-encrypt Metadata for each file
-          for (final file in files) {
-            // Decrypt with Old Key
-            final encMeta = base64Decode(file.encryptedMetadata);
-            final decRes = await _cryptoService.decryptData(
-              encryptedData: encMeta,
-              key: oldKey,
+        // 4. Re-encrypt Metadata for each file
+        for (final file in files) {
+          // Decrypt with Old Key
+          final encMeta = base64Decode(file.encryptedMetadata);
+          final decRes = await _cryptoService.decryptData(
+            encryptedData: encMeta,
+            key: oldKey,
+          );
+
+          if (decRes.isLeft()) {
+            return left(
+              const Failure.unexpected(
+                "Failed to decrypt file metadata during migration",
+              ),
             );
-            
-            if (decRes.isLeft()) {
-               return left(const Failure.unexpected("Failed to decrypt file metadata during migration"));
-            }
-            
-            final metaBytes = decRes.getOrElse(() => []);
-            
-            // Re-encrypt with New Key
-            final encRes = await _cryptoService.encryptData(
-               data: metaBytes,
-               key: newKey,
-            );
-            
-            if (encRes.isLeft()) {
-               return left(const Failure.unexpected("Failed to re-encrypt file metadata"));
-            }
-            
-            final newEncMeta = encRes.getOrElse(() => []);
-            
-            // Save updated file
-            final updatedFile = file.copyWith(
-               encryptedMetadata: base64Encode(newEncMeta),
-            );
-            final saveRes = await _fileRepository.saveFileModel(updatedFile);
-            if (saveRes.isLeft()) {
-               return left(const Failure.unexpected("Failed to save re-encrypted file metadata"));
-            }
           }
 
-          // 5. Update Folder Verification
-          final verificationEnc = await _cryptoService.encryptData(
-            data: utf8.encode('VERIFY'),
+          final metaBytes = decRes.getOrElse(() => []);
+
+          // Re-encrypt with New Key
+          final encRes = await _cryptoService.encryptData(
+            data: metaBytes,
             key: newKey,
           );
-          
-          return verificationEnc.fold(
-             (l) => left(l),
-             (encryptedBytes) async {
-               final updatedFolder = folder.copyWith(
-                 salt: base64Encode(newSalt),
-                 verificationHash: base64Encode(encryptedBytes),
-               );
-               
-               await _folderRepository.saveFolder(updatedFolder);
-               return right(newKey);
-             }
+
+          if (encRes.isLeft()) {
+            return left(
+              const Failure.unexpected("Failed to re-encrypt file metadata"),
+            );
+          }
+
+          final newEncMeta = encRes.getOrElse(() => []);
+
+          // Save updated file
+          final updatedFile = file.copyWith(
+            encryptedMetadata: base64Encode(newEncMeta),
           );
-        },
-      );
+          final saveRes = await _fileRepository.saveFileModel(updatedFile);
+          if (saveRes.isLeft()) {
+            return left(
+              const Failure.unexpected(
+                "Failed to save re-encrypted file metadata",
+              ),
+            );
+          }
+        }
+
+        // 5. Update Folder Verification
+        final verificationEnc = await _cryptoService.encryptData(
+          data: utf8.encode('VERIFY'),
+          key: newKey,
+        );
+
+        return verificationEnc.fold((l) => left(l), (encryptedBytes) async {
+          final updatedFolder = folder.copyWith(
+            salt: base64Encode(newSalt),
+            verificationHash: base64Encode(encryptedBytes),
+          );
+
+          await _folderRepository.saveFolder(updatedFolder);
+          return right(newKey);
+        });
+      });
     } on FileSystemException catch (e) {
       return left(Failure.fileSystemError(e.message));
     } catch (e) {
@@ -306,11 +318,13 @@ class VaultService {
       throw Exception("Metadata Encryption Failed");
     final encryptedMetadata = encryptedMetadataRes.getOrElse(() => []);
 
-    // 4. Generate Thumbnail (if applicable) -- Placeholder
-    // requirement: "Thumbnails must be generated efficiently"
-    // We can use `video_thumbnail` on `originalFile` (plaintext) BEFORE it is deleted (if user deletes it).
-    // Then encrypt the thumbnail.
-    // For now, leaving empty string.
+    // 4. Generate Thumbnail (Local, unencrypted for performance)
+    // We generate it BEFORE deleting the original file (if that happens later)
+    await _thumbnailService.generateThumbnail(
+      originalPath: originalFile.path,
+      fileId: fileId,
+      key: folderKey,
+    );
 
     // 5. Save FileModel
     final fileModel = FileModel(
@@ -344,21 +358,24 @@ class VaultService {
 
     // Check Expiry
     if (metadata.expiryDate != null) {
-       DateTime now;
-       if (trustedNow != null) {
-         now = trustedNow;
-       } else {
-         try {
-           now = await _trustedTimeService.getTrustedTime();
-         } catch (e) {
-           throw Exception("Internet connection is required to verify this shared file.");
-         }
-       }
-       
-       if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
-          await _fileRepository.deleteFile(file.id);
-          throw Exception("File has expired and has been deleted.");
-       }
+      DateTime now;
+      if (trustedNow != null) {
+        now = trustedNow;
+      } else {
+        try {
+          now = await _trustedTimeService.getTrustedTime();
+        } catch (e) {
+          throw Exception(
+            "Internet connection is required to verify this shared file.",
+          );
+        }
+      }
+
+      if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
+        await _fileRepository.deleteFile(file.id);
+        await _thumbnailService.deleteThumbnail(file.id);
+        throw Exception("File has expired and has been deleted.");
+      }
     }
 
     // 2. Get File Key (DEK)
@@ -444,20 +461,21 @@ class VaultService {
 
     // Check Expiry
     if (metadata.expiryDate != null) {
-       DateTime now;
-       if (trustedNow != null) {
-         now = trustedNow;
-       } else {
-         try {
-           now = await _trustedTimeService.getTrustedTime();
-         } catch (e) {
-           throw Exception("Internet connection is required.");
-         }
-       }
-       if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
-         await _fileRepository.deleteFile(file.id);
-         throw Exception("File has expired.");
-       }
+      DateTime now;
+      if (trustedNow != null) {
+        now = trustedNow;
+      } else {
+        try {
+          now = await _trustedTimeService.getTrustedTime();
+        } catch (e) {
+          throw Exception("Internet connection is required.");
+        }
+      }
+      if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
+        await _fileRepository.deleteFile(file.id);
+        await _thumbnailService.deleteThumbnail(file.id);
+        throw Exception("File has expired.");
+      }
     }
 
     // 2. Setup
@@ -547,18 +565,20 @@ class VaultService {
       DateTime trustedNow;
       try {
         if (expiry != null) {
-           trustedNow = await _trustedTimeService.getTrustedTime();
+          trustedNow = await _trustedTimeService.getTrustedTime();
         } else {
-           // Try get trusted time, fallback to device time if offline allowed (no expiry)
-           try {
-             trustedNow = await _trustedTimeService.getTrustedTime();
-           } catch (_) {
-             trustedNow = DateTime.now();
-           }
+          // Try get trusted time, fallback to device time if offline allowed (no expiry)
+          try {
+            trustedNow = await _trustedTimeService.getTrustedTime();
+          } catch (_) {
+            trustedNow = DateTime.now();
+          }
         }
       } catch (e) {
-         yield ExportFailure("Internet connection is required to create a secure expiry timestamp.");
-         return;
+        yield ExportFailure(
+          "Internet connection is required to create a secure expiry timestamp.",
+        );
+        return;
       }
 
       // 2. Prepare Metadata for Isolate
@@ -580,11 +600,12 @@ class VaultService {
 
           // Check for expiry BEFORE exporting
           if (originalMeta.expiryDate != null) {
-              if (trustedNow.isAfter(originalMeta.expiryDate!)) {
-                // File is expired. Delete it and skip.
-                await _fileRepository.deleteFile(file.id);
-                continue;
-              }
+            if (trustedNow.isAfter(originalMeta.expiryDate!)) {
+              // File is expired. Delete it and skip.
+              await _fileRepository.deleteFile(file.id);
+              await _thumbnailService.deleteThumbnail(file.id);
+              continue;
+            }
           }
 
           exportItems.add(
@@ -649,11 +670,16 @@ class VaultService {
       try {
         trustedNow = await _trustedTimeService.getTrustedTime();
       } catch (e) {
-        return left(const Failure.unexpected("Internet connection is required for security verification."));
+        return left(
+          const Failure.unexpected(
+            "Internet connection is required for security verification.",
+          ),
+        );
       }
 
       final fileLen = await file.length();
-      if (fileLen < 32 + 22) { // 32 byte salt + min zip size
+      if (fileLen < 32 + 22) {
+        // 32 byte salt + min zip size
         return left(const Failure.unexpected("Invalid file"));
       }
 
@@ -664,8 +690,9 @@ class VaultService {
       final openFile = await file.open();
       final salt = await openFile.read(32);
       await openFile.close();
-      
-      if (salt.length != 32) return left(const Failure.unexpected("Invalid file header"));
+
+      if (salt.length != 32)
+        return left(const Failure.unexpected("Invalid file header"));
 
       // 3. Extract ZIP portion to Temp File
       // We cannot read the ZIP directly from offset 32 because ZipDecoder expects 0-based offsets.
@@ -673,11 +700,13 @@ class VaultService {
       final tempDir = await getTemporaryDirectory();
       final tempZipPath = '${tempDir.path}/import_${const Uuid().v4()}.zip';
       tempZipFile = File(tempZipPath);
-      
+
       // Stream copy from offset 32 to temp file
       final zipSink = tempZipFile.openWrite();
-      await file.openRead(32).pipe(zipSink); // pipes stream to sink and closes sink
-      
+      await file
+          .openRead(32)
+          .pipe(zipSink); // pipes stream to sink and closes sink
+
       // 4. Decode ZIP from Temp File (Disk-based)
       final inputStream = InputFileStream(tempZipPath);
       final archive = ZipDecoder().decodeBuffer(inputStream);
@@ -689,7 +718,9 @@ class VaultService {
       final manifestFile = archive.findFile('manifest.enc');
       if (manifestFile == null) {
         await inputStream.close();
-        return left(const Failure.unexpected("Invalid blindkey file structure"));
+        return left(
+          const Failure.unexpected("Invalid blindkey file structure"),
+        );
       }
 
       // Manifest is small, safe to load into memory
@@ -712,7 +743,8 @@ class VaultService {
           if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
             final expiryIso = map['expiryDate'] as String;
             final expiryDate = DateTime.tryParse(expiryIso);
-            if (expiryDate != null && trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
+            if (expiryDate != null &&
+                trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
               await inputStream.close();
               return left(const Failure.fileExpired());
             }
@@ -735,13 +767,14 @@ class VaultService {
           final filesList = (map['files'] as List)
               .map((e) => FileMetadata.fromJson(e))
               .toList();
-          
+
           final vaultPathRes = await _storageService.createEncryptedFileDir();
           final vaultPath = vaultPathRes.getOrElse(() => '');
 
           for (final meta in filesList) {
-             if (meta.expiryDate != null && trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
-               continue;
+            if (meta.expiryDate != null &&
+                trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
+              continue;
             }
 
             final zipFile = archive.findFile(meta.encryptedFilePath);
@@ -778,7 +811,7 @@ class VaultService {
               await _fileRepository.saveFileModel(fileModel);
             }
           }
-          
+
           await inputStream.close();
           return right(unit);
         },
@@ -786,8 +819,11 @@ class VaultService {
     } on FileSystemException catch (e) {
       return left(Failure.fileSystemError(e.message));
     } catch (e) {
-      if (e.toString().contains("Internet") || e.toString().contains("SocketException")) {
-         return left(const Failure.unexpected("Internet connection is required."));
+      if (e.toString().contains("Internet") ||
+          e.toString().contains("SocketException")) {
+        return left(
+          const Failure.unexpected("Internet connection is required."),
+        );
       }
       return left(Failure.unexpected(e.toString()));
     } finally {
@@ -816,7 +852,7 @@ class VaultService {
         try {
           final metadataJson = utf8.decode(bytes);
           final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
-          
+
           if (metadata.expiryDate != null) {
             DateTime now;
             if (trustedNow != null) {
@@ -825,14 +861,18 @@ class VaultService {
               try {
                 now = await _trustedTimeService.getTrustedTime();
               } catch (e) {
-                 return left(const Failure.unexpected("Internet connection is required for security verification."));
+                return left(
+                  const Failure.unexpected(
+                    "Internet connection is required for security verification.",
+                  ),
+                );
               }
             }
-            
+
             if (now.toUtc().isAfter(metadata.expiryDate!.toUtc())) {
-               // Expired
-               await _fileRepository.deleteFile(file.id);
-               return left(const Failure.fileExpired());
+              // Expired
+              await _fileRepository.deleteFile(file.id);
+              return left(const Failure.fileExpired());
             }
           }
 

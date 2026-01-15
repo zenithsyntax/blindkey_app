@@ -28,6 +28,7 @@ import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:blindkey_app/application/services/upload_prefs_service.dart';
 import 'package:blindkey_app/presentation/dialogs/upload_info_dialog.dart';
+import 'package:blindkey_app/application/services/thumbnail_service.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -348,6 +349,7 @@ class FolderViewPage extends HookConsumerWidget {
                 ),
               ),
             ),
+          // File Selection Processing Overlay
           // File Selection Processing Overlay
           if (isProcessing.value)
             Positioned.fill(
@@ -878,6 +880,7 @@ class _FileThumbnail extends HookConsumerWidget {
     // State for metadata and image
     final metadataState = useState<FileMetadata?>(null);
     final imageBytesState = useState<Uint8List?>(null);
+    final thumbnailBytesState = useState<Uint8List?>(null); // Changed to bytes
     // Track if we should show a loader for image
     final isImageLoading = useState(false);
 
@@ -888,9 +891,28 @@ class _FileThumbnail extends HookConsumerWidget {
         if (isCancelled) return;
 
         try {
+          // 0. Check for Local Thumbnail first (Fast path)
+          final thumbService = ref.read(thumbnailServiceProvider);
+          // Now returns bytes (decrypted)
+          final thumbBytes = await thumbService.getThumbnail(
+            fileId: file.id,
+            key: folderKey,
+          );
+
+          if (!isCancelled && thumbBytes != null) {
+            thumbnailBytesState.value = thumbBytes;
+          } // We still need metadata to know mime type for opening correct viewer?
+          // Or just to show name.
+          // If we have thumbnail, we can defer metadata decryption until tap?
+          // No, we likely need metadata for the label (filename) in the grid if shown.
+          // But _FileThumbnail usually implies just the image.
+          // Let's see if we can skip full decryption loop if we have thumbnail.
+
+          if (isCancelled) return;
+
           final vault = ref.read(vaultServiceProvider);
 
-          // 1. Decrypt Metadata
+          // 1. Decrypt Metadata (Fast enough usually)
           final metaRes = await vault.decryptMetadata(
             file: file,
             folderKey: folderKey,
@@ -904,10 +926,14 @@ class _FileThumbnail extends HookConsumerWidget {
           );
           metadataState.value = meta;
 
-          // 2. Determine if Image
+          // If we already have thumbnail, we don't need to decrypt full file!
+          if (thumbnailBytesState.value != null) return;
+
+          // 2. Determine if Image (Old path for existing files without thumbnail)
           String mime = meta.mimeType;
           // Fix legacy mime types
           if (mime == 'application/octet-stream') {
+            // ... (existing mime fix logic) ...
             final ext = meta.fileName.split('.').last.toLowerCase();
             switch (ext) {
               case 'jpg':
@@ -928,6 +954,9 @@ class _FileThumbnail extends HookConsumerWidget {
 
           if (mime.startsWith('image/')) {
             isImageLoading.value = true;
+            print("Debug: File ${file.id} starting decryption...");
+
+            // Removed maxImageSize check to ensure all images attempt to load as before
 
             final stream = vault.decryptFileStream(
               file: file,
@@ -939,13 +968,34 @@ class _FileThumbnail extends HookConsumerWidget {
             await for (final chunk in stream) {
               if (isCancelled || !isMounted()) break;
               bytes.addAll(chunk);
-
-              // Optional: If image is huge, maybe break early?
-              // For now, full load.
             }
 
             if (!isCancelled && isMounted()) {
               imageBytesState.value = Uint8List.fromList(bytes);
+
+              // Self-healing: Generate thumbnail if missing
+              // Wait for it so we can show it immediately
+              try {
+                await ref
+                    .read(thumbnailServiceProvider)
+                    .generateThumbnailFromBytes(
+                      bytes: imageBytesState.value!,
+                      fileId: file.id,
+                      key: folderKey,
+                    );
+
+                // Refresh local thumbnail state
+                if (context.mounted) {
+                  final newThumb = await ref
+                      .read(thumbnailServiceProvider)
+                      .getThumbnail(fileId: file.id, key: folderKey);
+                  if (newThumb != null) {
+                    thumbnailBytesState.value = newThumb;
+                  }
+                }
+              } catch (e) {
+                print("Self-healing failed: $e");
+              }
             }
             if (isMounted()) isImageLoading.value = false;
           }
@@ -1190,6 +1240,7 @@ class _FileThumbnail extends HookConsumerWidget {
                     metadataState.value,
                     imageBytesState.value,
                     isImageLoading.value,
+                    thumbnailBytesState.value,
                   ),
                 ),
                 // Footer Gradient for Text
@@ -1274,7 +1325,19 @@ class _FileThumbnail extends HookConsumerWidget {
     FileMetadata? meta,
     Uint8List? imgBytes,
     bool isLoadingImg,
+    Uint8List? thumbBytes,
   ) {
+    // 0. Check Thumbnail first
+    if (thumbBytes != null) {
+      return Image.memory(
+        thumbBytes,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.broken_image_rounded, color: Colors.white24),
+        ),
+      );
+    }
+
     if (meta == null) {
       return const Center(
         child: SizedBox(

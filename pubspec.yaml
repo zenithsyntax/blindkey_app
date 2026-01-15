@@ -63,6 +63,7 @@ dependencies:
   flutter_tilt: 3.3.2
   auto_size_text: ^3.0.0
   app_links: ^6.4.1
+  image: ^4.3.0
 
 dev_dependencies:
   flutter_test:
