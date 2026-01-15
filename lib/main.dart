@@ -21,7 +21,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize AdMob
   await MobileAds.instance.initialize();
-  
+
   // Lock orientation to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -42,9 +42,7 @@ void main() async {
     }
   }
 
-  runApp(ProviderScope(
-    child: BlindKeyApp(isFirstRun: isFirstRun),
-  ));
+  runApp(ProviderScope(child: BlindKeyApp(isFirstRun: isFirstRun)));
 }
 
 class BlindKeyApp extends HookConsumerWidget {
@@ -55,9 +53,12 @@ class BlindKeyApp extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Initialize App Lock
     useEffect(() {
-       ref.read(appLockNotifierProvider.notifier).initialize();
-       return null;
+      ref.read(appLockNotifierProvider.notifier).initialize();
+      return null;
     }, []);
+
+    // Initialize Expiry Service
+    ref.watch(expiryServiceProvider);
 
     // Root/Jailbreak Detection Check
     useEffect(() {
@@ -70,15 +71,16 @@ class BlindKeyApp extends HookConsumerWidget {
           // For now, let's just log or maybe show a warning dialog if strictly requested.
           // User asked for "Maximum Secure".
           if (isJailBroken) {
-             // We can redirect to a "Security Violation" page or just exit.
-             // But let's be careful not to brick users abruptly. 
-             // Ideally: Show a blocking dialog.
-             // Since we are in `build`, we can't easily push a dialog immediately without context/scheduler.
-             // We will handle this by checking a provider state? 
-             // Or simplified: just run it.
+            // We can redirect to a "Security Violation" page or just exit.
+            // But let's be careful not to brick users abruptly.
+            // Ideally: Show a blocking dialog.
+            // Since we are in `build`, we can't easily push a dialog immediately without context/scheduler.
+            // We will handle this by checking a provider state?
+            // Or simplified: just run it.
           }
         } catch (_) {}
       }
+
       checkSecurity();
       return null;
     }, []);
@@ -86,16 +88,20 @@ class BlindKeyApp extends HookConsumerWidget {
     final isLocked = ref.watch(appLockNotifierProvider);
     final termsState = ref.watch(termsNotifierProvider);
     final hasAcceptedTerms = termsState.valueOrNull ?? false;
-    final splashFinished = ref.watch(splashFinishedProvider); // Watch splash state
-    
+    final splashFinished = ref.watch(
+      splashFinishedProvider,
+    ); // Watch splash state
+
     // Security Check Provider (Simplified for this file)
     // We could make a dedicated SecurityNotifier but inline is faster for now.
-    final securityCheck = useFuture(useMemoized(() async {
-      if (Platform.isAndroid || Platform.isIOS) {
-         return await SafeDevice.isJailBroken;
-      }
-      return false;
-    }));
+    final securityCheck = useFuture(
+      useMemoized(() async {
+        if (Platform.isAndroid || Platform.isIOS) {
+          return await SafeDevice.isJailBroken;
+        }
+        return false;
+      }),
+    );
 
     if (securityCheck.hasData && securityCheck.data == true) {
       return const MaterialApp(
@@ -112,7 +118,11 @@ class BlindKeyApp extends HookConsumerWidget {
                   SizedBox(height: 16),
                   Text(
                     "Security Violation",
-                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   SizedBox(height: 8),
                   Text(
@@ -136,7 +146,7 @@ class BlindKeyApp extends HookConsumerWidget {
       builder: (context, child) {
         // Only apply lock screen if terms are accepted AND splash is finished
         final showLock = isLocked && hasAcceptedTerms && splashFinished;
-        
+
         return Stack(
           children: [
             if (child != null) child,
@@ -151,4 +161,3 @@ class BlindKeyApp extends HookConsumerWidget {
     );
   }
 }
-

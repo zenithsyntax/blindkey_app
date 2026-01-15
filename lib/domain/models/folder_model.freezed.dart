@@ -29,6 +29,7 @@ mixin _$FolderModel {
       throw _privateConstructorUsedError; // Base64 encoded hash to verify password
   DateTime get createdAt => throw _privateConstructorUsedError;
   bool get allowSave => throw _privateConstructorUsedError;
+  DateTime? get expiryDate => throw _privateConstructorUsedError;
 
   /// Serializes this FolderModel to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -54,6 +55,7 @@ abstract class $FolderModelCopyWith<$Res> {
     String verificationHash,
     DateTime createdAt,
     bool allowSave,
+    DateTime? expiryDate,
   });
 }
 
@@ -78,6 +80,7 @@ class _$FolderModelCopyWithImpl<$Res, $Val extends FolderModel>
     Object? verificationHash = null,
     Object? createdAt = null,
     Object? allowSave = null,
+    Object? expiryDate = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -105,6 +108,10 @@ class _$FolderModelCopyWithImpl<$Res, $Val extends FolderModel>
                 ? _value.allowSave
                 : allowSave // ignore: cast_nullable_to_non_nullable
                       as bool,
+            expiryDate: freezed == expiryDate
+                ? _value.expiryDate
+                : expiryDate // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
           )
           as $Val,
     );
@@ -127,6 +134,7 @@ abstract class _$$FolderModelImplCopyWith<$Res>
     String verificationHash,
     DateTime createdAt,
     bool allowSave,
+    DateTime? expiryDate,
   });
 }
 
@@ -150,6 +158,7 @@ class __$$FolderModelImplCopyWithImpl<$Res>
     Object? verificationHash = null,
     Object? createdAt = null,
     Object? allowSave = null,
+    Object? expiryDate = freezed,
   }) {
     return _then(
       _$FolderModelImpl(
@@ -177,6 +186,10 @@ class __$$FolderModelImplCopyWithImpl<$Res>
             ? _value.allowSave
             : allowSave // ignore: cast_nullable_to_non_nullable
                   as bool,
+        expiryDate: freezed == expiryDate
+            ? _value.expiryDate
+            : expiryDate // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
       ),
     );
   }
@@ -192,6 +205,7 @@ class _$FolderModelImpl implements _FolderModel {
     required this.verificationHash,
     required this.createdAt,
     this.allowSave = true,
+    this.expiryDate,
   });
 
   factory _$FolderModelImpl.fromJson(Map<String, dynamic> json) =>
@@ -212,10 +226,12 @@ class _$FolderModelImpl implements _FolderModel {
   @override
   @JsonKey()
   final bool allowSave;
+  @override
+  final DateTime? expiryDate;
 
   @override
   String toString() {
-    return 'FolderModel(id: $id, name: $name, salt: $salt, verificationHash: $verificationHash, createdAt: $createdAt, allowSave: $allowSave)';
+    return 'FolderModel(id: $id, name: $name, salt: $salt, verificationHash: $verificationHash, createdAt: $createdAt, allowSave: $allowSave, expiryDate: $expiryDate)';
   }
 
   @override
@@ -231,7 +247,9 @@ class _$FolderModelImpl implements _FolderModel {
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.allowSave, allowSave) ||
-                other.allowSave == allowSave));
+                other.allowSave == allowSave) &&
+            (identical(other.expiryDate, expiryDate) ||
+                other.expiryDate == expiryDate));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -244,6 +262,7 @@ class _$FolderModelImpl implements _FolderModel {
     verificationHash,
     createdAt,
     allowSave,
+    expiryDate,
   );
 
   /// Create a copy of FolderModel
@@ -268,6 +287,7 @@ abstract class _FolderModel implements FolderModel {
     required final String verificationHash,
     required final DateTime createdAt,
     final bool allowSave,
+    final DateTime? expiryDate,
   }) = _$FolderModelImpl;
 
   factory _FolderModel.fromJson(Map<String, dynamic> json) =
@@ -285,6 +305,8 @@ abstract class _FolderModel implements FolderModel {
   DateTime get createdAt;
   @override
   bool get allowSave;
+  @override
+  DateTime? get expiryDate;
 
   /// Create a copy of FolderModel
   /// with the given fields replaced by the non-null parameter values.

@@ -20,7 +20,7 @@ class MetadataRepository implements FolderRepository {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -28,7 +28,12 @@ class MetadataRepository implements FolderRepository {
 
   Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE folders ADD COLUMN allowSave INTEGER DEFAULT 1');
+      await db.execute(
+        'ALTER TABLE folders ADD COLUMN allowSave INTEGER DEFAULT 1',
+      );
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE folders ADD COLUMN expiryDate TEXT');
     }
   }
 
@@ -40,10 +45,11 @@ class MetadataRepository implements FolderRepository {
         salt TEXT NOT NULL,
         verificationHash TEXT NOT NULL,
         createdAt TEXT NOT NULL,
-        allowSave INTEGER DEFAULT 1
+        allowSave INTEGER DEFAULT 1,
+        expiryDate TEXT
       )
     ''');
-    
+
     // Also create files table
     await db.execute('''
       CREATE TABLE files (
@@ -58,7 +64,10 @@ class MetadataRepository implements FolderRepository {
   }
 
   @override
-  Future<Either<Failure, FolderModel>> createFolder({required String name, required String password}) async {
+  Future<Either<Failure, FolderModel>> createFolder({
+    required String name,
+    required String password,
+  }) async {
     // This implementation is incomplete as it requires the encryption service to generate salt/hash
     // We will implement the actual logic in the Application Layer (Notifier), which calls this just to SAVE.
     // Or we should pass the fully formed model here. The interface says "createFolder(name, password)"
@@ -70,26 +79,28 @@ class MetadataRepository implements FolderRepository {
     // Let's stick to the interface for now but we might refactor to `saveFolder(FolderModel)`.
     // Actually, `createFolder` in Repo usually implies interaction with specific backend logic.
     // Since we are "Serverless", the Repo IS the backend.
-    
+
     // Wait, if I want to strictly follow Clean Architecture:
     // 1. Application Layer calls `CreateFolderUseCase`.
     // 2. UseCase generates Salt, Hash using `CryptographyService`.
     // 3. UseCase creates `FolderModel`.
     // 4. UseCase calls `FolderRepository.save(folderModel)`.
-    
+
     // My previous interface `createFolder` takes name/password. This mixes concerns.
     // I should probably change the interface to `saveFolder(FolderModel)`.
     // However, I can't easily change the interface *file* right now without rewriting it.
-    // I'll leave the interface as is and implement "dumb" logic assuming the params are insufficient 
+    // I'll leave the interface as is and implement "dumb" logic assuming the params are insufficient
     // OR implementation will do the work.
     // Let's implement it here properly:
-    // I need `CryptographyService` injected here to do it properly? 
+    // I need `CryptographyService` injected here to do it properly?
     // Or I should refactor the interface. Refactoring is better.
-    
+
     // For now, I will implement `saveFolder` logic inside `createFolder` but I need the salt/hash.
     // Use `throw UnimplementedError`? No, I'll update the interface in the next step to be `saveFolder`.
-    
-    return left(const Failure.unexpected('Refactor required: Use saveFolder instead'));
+
+    return left(
+      const Failure.unexpected('Refactor required: Use saveFolder instead'),
+    );
   }
 
   Future<Either<Failure, Unit>> saveFolder(FolderModel folder) async {
@@ -99,10 +110,10 @@ class MetadataRepository implements FolderRepository {
       final json = folder.toJson();
       final Map<String, dynamic> dbData = Map.from(json);
       dbData['allowSave'] = (folder.allowSave) ? 1 : 0;
-      
+
       await db.insert(
-        'folders', 
-        dbData, 
+        'folders',
+        dbData,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
       return right(unit);
@@ -146,23 +157,30 @@ class MetadataRepository implements FolderRepository {
     try {
       final db = await database;
       final maps = await db.query('folders', orderBy: 'createdAt DESC');
-      return right(maps.map((e) {
-         final Map<String, dynamic> data = Map.from(e);
-         data['allowSave'] = (data['allowSave'] as int?) == 1;
-         return FolderModel.fromJson(data);
-      }).toList());
+      return right(
+        maps.map((e) {
+          final Map<String, dynamic> data = Map.from(e);
+          data['allowSave'] = (data['allowSave'] as int?) == 1;
+          return FolderModel.fromJson(data);
+        }).toList(),
+      );
     } catch (e) {
       return left(Failure.databaseError(e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, bool>> verifyPassword({required FolderModel folder, required String password}) {
+  Future<Either<Failure, bool>> verifyPassword({
+    required FolderModel folder,
+    required String password,
+  }) {
     // This should be done in Domain or Application service using Cryptography.
-    // Repository shouldn't really check password? 
+    // Repository shouldn't really check password?
     // Actually, "Repository" abstracting specific data source.
     // If we are treating this as "Authentication", it belongs in a generic Service.
     // But let's leave it stubbed.
-    return Future.value(left(const Failure.unexpected('Use EncryptionService for verification')));
+    return Future.value(
+      left(const Failure.unexpected('Use EncryptionService for verification')),
+    );
   }
 }

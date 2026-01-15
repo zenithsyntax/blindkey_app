@@ -16,12 +16,24 @@ class FolderNotifier extends _$FolderNotifier {
 
   Future<void> createFolder(String name, String password) async {
     final vault = ref.read(vaultServiceProvider);
+
+    // Preserve current state to restore on error
+    final previousState = state;
     state = const AsyncValue.loading();
 
     final result = await vault.createFolder(name, password);
 
     result.fold(
-      (failure) => state = AsyncValue.error(failure, StackTrace.current),
+      (failure) {
+        // Restore previous state so we don't show full screen error or get stuck in loading
+        if (previousState.hasValue) {
+          state = previousState;
+        } else {
+          // If no previous value, just invalidate to reload
+          ref.invalidateSelf();
+        }
+        throw failure;
+      },
       (_) {
         // Refresh list
         ref.invalidateSelf();
@@ -42,7 +54,8 @@ class FolderNotifier extends _$FolderNotifier {
 
     final folder = currentState.firstWhere(
       (f) => f.id == id,
-      orElse: () => throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
+      orElse: () =>
+          throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
     );
     final updatedFolder = folder.copyWith(name: newName);
 
@@ -85,7 +98,8 @@ class FolderNotifier extends _$FolderNotifier {
 
     final folder = currentState.firstWhere(
       (f) => f.id == folderId,
-      orElse: () => throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
+      orElse: () =>
+          throw Exception(ErrorMapper.getUserFriendlyError("Folder not found")),
     );
 
     final vault = ref.read(vaultServiceProvider);

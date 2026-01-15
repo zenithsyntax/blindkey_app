@@ -18,12 +18,18 @@ class CreateFolderDialog extends HookConsumerWidget {
     final confirmPasswordController = useTextEditingController();
     final formKey = useMemoized(() => GlobalKey<FormState>());
     final isMatching = useState(true);
+    final isPasswordObscured = useState(true);
+    final isConfirmPasswordObscured = useState(true);
 
     final isLoading = useState(false);
     final errorText = useState<String?>(null);
 
     // Common Input Decoration
-    InputDecoration buildInputDecoration(String label, {String? errorText}) {
+    InputDecoration buildInputDecoration(
+      String label, {
+      String? errorText,
+      Widget? suffixIcon,
+    }) {
       return InputDecoration(
         labelText: label,
         labelStyle: GoogleFonts.inter(color: Colors.white54),
@@ -43,9 +49,23 @@ class CreateFolderDialog extends HookConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Colors.blueAccent),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+        suffixIcon: suffixIcon,
       );
     }
+    // ... [Lines 50-112 skipped, no changes needed inside build, but we are editing the huge block so context is key if not careful, but I'll assume replace works with large range or I should narrow it down. I'll stick to replacing the vars and decoration first if possible, or do it in one go]
+    // Actually, it's safer to break it down if I can't match easily. But `ref` is at line 15.
+    // Let's rely on StartLine/EndLine carefully.
+
+    // NO, wait. I will replace the variable definitions, and THEN the text fields.
+    // The replace_file_content tool only supports ONE block. So I have to do it in one chunk if they are close, or use multi_replace.
+    // `isMatching` is line 20. `isLoading` is line 22. Input decoration is line 26.
+    // `TextFormField` for password is line 116.
+    // The distance is large (line 20 to 144).
+    // I should use `multi_replace_file_content` for this.
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -83,7 +103,11 @@ class CreateFolderDialog extends HookConsumerWidget {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.error_outline, size: 20, color: Colors.red.shade300),
+                          Icon(
+                            Icons.error_outline,
+                            size: 20,
+                            color: Colors.red.shade300,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: AutoSizeText(
@@ -101,7 +125,7 @@ class CreateFolderDialog extends HookConsumerWidget {
                     ),
                   ],
                   const SizedBox(height: 24),
-                  
+
                   // Name Field
                   TextFormField(
                     controller: nameController,
@@ -111,22 +135,36 @@ class CreateFolderDialog extends HookConsumerWidget {
                     validator: (v) => v!.isEmpty ? 'Name required' : null,
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Password Field
                   TextFormField(
                     controller: passwordController,
                     style: GoogleFonts.inter(color: Colors.white),
                     cursorColor: Colors.blueAccent,
-                    decoration: buildInputDecoration('Password'),
-                    obscureText: true,
+                    decoration: buildInputDecoration(
+                      'Password',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          isPasswordObscured.value
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.white30,
+                        ),
+                        onPressed: () {
+                          isPasswordObscured.value = !isPasswordObscured.value;
+                        },
+                      ),
+                    ),
+                    obscureText: isPasswordObscured.value,
                     validator: (v) => v!.length < 4 ? 'Min 4 chars' : null,
                     onChanged: (_) {
                       isMatching.value =
-                          passwordController.text == confirmPasswordController.text;
+                          passwordController.text ==
+                          confirmPasswordController.text;
                     },
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Confirm Password Field
                   TextFormField(
                     controller: confirmPasswordController,
@@ -134,12 +172,27 @@ class CreateFolderDialog extends HookConsumerWidget {
                     cursorColor: Colors.blueAccent,
                     decoration: buildInputDecoration(
                       'Confirm Password',
-                      errorText: isMatching.value ? null : 'Passwords do not match',
+                      errorText: isMatching.value
+                          ? null
+                          : 'Passwords do not match',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          isConfirmPasswordObscured.value
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.white30,
+                        ),
+                        onPressed: () {
+                          isConfirmPasswordObscured.value =
+                              !isConfirmPasswordObscured.value;
+                        },
+                      ),
                     ),
-                    obscureText: true,
+                    obscureText: isConfirmPasswordObscured.value,
                     onChanged: (_) {
                       isMatching.value =
-                          passwordController.text == confirmPasswordController.text;
+                          passwordController.text ==
+                          confirmPasswordController.text;
                     },
                   ),
                   const SizedBox(height: 32),
@@ -149,7 +202,9 @@ class CreateFolderDialog extends HookConsumerWidget {
                     children: [
                       Expanded(
                         child: TextButton(
-                          onPressed: isLoading.value ? null : () => Navigator.pop(context),
+                          onPressed: isLoading.value
+                              ? null
+                              : () => Navigator.pop(context),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -178,18 +233,20 @@ class CreateFolderDialog extends HookConsumerWidget {
                                       // Artificial delay for better UX if operation is too fast?
                                       // Optional, but usually nice to see the spinner.
                                       // await Future.delayed(const Duration(milliseconds: 500));
-                                      
+
                                       await ref
                                           .read(folderNotifierProvider.notifier)
                                           .createFolder(
                                             nameController.text,
                                             passwordController.text,
                                           );
-                                      if (context.mounted) Navigator.pop(context);
-                                      } catch (e) {
-                                        isLoading.value = false;
-                                        errorText.value = ErrorMapper.getUserFriendlyError(e);
-                                      }
+                                      if (context.mounted)
+                                        Navigator.pop(context);
+                                    } catch (e) {
+                                      isLoading.value = false;
+                                      errorText.value =
+                                          ErrorMapper.getUserFriendlyError(e);
+                                    }
                                   } else if (!isMatching.value) {
                                     errorText.value =
                                         'Passwords do not match. Please ensure both entries are identical.';

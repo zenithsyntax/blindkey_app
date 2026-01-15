@@ -64,6 +64,8 @@ dependencies:
   auto_size_text: ^3.0.0
   app_links: ^6.4.1
   image: ^4.3.0
+  url_launcher: ^6.3.2
+  connectivity_plus: ^7.0.0
 
 dev_dependencies:
   flutter_test:

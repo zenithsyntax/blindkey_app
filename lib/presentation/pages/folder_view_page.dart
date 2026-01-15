@@ -5,6 +5,7 @@ import 'dart:ui'; // Added for BackdropFilter
 
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
+import 'package:blindkey_app/application/services/connectivity_provider.dart';
 import 'package:blindkey_app/application/store/file_notifier.dart';
 import 'package:blindkey_app/application/store/folder_stats_provider.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
@@ -61,6 +62,21 @@ class FolderViewPage extends HookConsumerWidget {
     // Check if folder is empty
     final isEmpty = filesAsync.valueOrNull?.isEmpty ?? true;
 
+    // Check internet status
+    final isOnlineAsync = ref.watch(isOnlineProvider);
+    final isOnline = isOnlineAsync.valueOrNull ?? false;
+
+    // Listen to expiry events (Realtime Removal)
+    useEffect(() {
+      final subscription = ref.read(expiryServiceProvider).onFileDeleted.listen(
+        (_) {
+          // Refresh file list when a file is auto-deleted
+          ref.invalidate(fileNotifierProvider(folder.id));
+        },
+      );
+      return subscription.cancel;
+    }, []);
+
     useEffect(() {
       scrollController.addListener(() {
         if (scrollController.position.pixels >=
@@ -102,6 +118,39 @@ class FolderViewPage extends HookConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 centerTitle: false,
+                bottom: !isOnline
+                    ? PreferredSize(
+                        preferredSize: const Size.fromHeight(24),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              left: 72,
+                              bottom: 12,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.wifi_off_rounded,
+                                  size: 14,
+                                  color: Colors.orangeAccent,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "Offline",
+                                  style: GoogleFonts.inter(
+                                    color: Colors.orangeAccent.withOpacity(0.8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
                 actions: [
                   // Hide export/share button if folder has expired files, is empty, or extraction is not allowed
                   if (!hasExpiredFiles && !isEmpty && folder.allowSave)

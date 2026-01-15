@@ -54,5 +54,5 @@ ZenithSyntax reserves the right to update this Privacy Policy at any time. We wi
 ## 8. Contact Us
 If you have any questions or concerns about this Privacy Policy or how your data is handled, please contact us at:
 
-**ZenithSyntax Email:** zenithsyntax@gmail.com
+**ZenithSyntax Email:** [zenithsyntax@gmail.com](mailto:zenithsyntax@gmail.com)
 ''';

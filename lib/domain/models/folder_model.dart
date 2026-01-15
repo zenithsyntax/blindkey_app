@@ -12,6 +12,7 @@ class FolderModel with _$FolderModel {
     required String verificationHash, // Base64 encoded hash to verify password
     required DateTime createdAt,
     @Default(true) bool allowSave,
+    DateTime? expiryDate,
   }) = _FolderModel;
 
   factory FolderModel.fromJson(Map<String, dynamic> json) => _$FolderModelFromJson(json);

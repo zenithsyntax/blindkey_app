@@ -79,7 +79,7 @@ These Terms shall be governed by and construed in accordance with the laws of th
 If you have any questions regarding these Terms, please contact:
 *   **Company:** ZenithSyntax
 *   **Application:** BlindKey
-*   **Support:** blindkey@gmail.com
+*   **Support:** [blindkey@gmail.com](mailto:blindkey@gmail.com)
 
 **Final Legal Statement:** BlindKey is a local encryption utility. ZenithSyntax is not responsible for user behavior, content, or the misuse of encryption technology. Users bear the full and exclusive responsibility for all actions performed using the App.
 ''';

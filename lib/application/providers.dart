@@ -1,6 +1,7 @@
 import 'package:blindkey_app/application/services/vault_service.dart';
 import 'package:blindkey_app/application/services/trusted_time_service.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
+import 'package:blindkey_app/application/services/expiry_service.dart';
 import 'package:blindkey_app/domain/repositories/file_repository.dart';
 import 'package:blindkey_app/domain/repositories/folder_repository.dart';
 import 'package:blindkey_app/infrastructure/encryption/cryptography_service.dart';
@@ -100,6 +101,18 @@ FolderRepository folderRepositoryImpl(FolderRepositoryImplRef ref) {
 @Riverpod(keepAlive: true)
 AdService adService(AdServiceRef ref) {
   final service = AdService();
+  service.initialize();
+  ref.onDispose(() => service.dispose());
+  return service;
+}
+
+@Riverpod(keepAlive: true)
+ExpiryService expiryService(ExpiryServiceRef ref) {
+  final service = ExpiryService(
+    ref.watch(fileRepositoryProvider),
+    ref.watch(trustedTimeServiceProvider),
+    ref.watch(thumbnailServiceProvider),
+  );
   service.initialize();
   ref.onDispose(() => service.dispose());
   return service;

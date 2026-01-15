@@ -3,6 +3,7 @@ import 'package:blindkey_app/presentation/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TermsContentPage extends StatelessWidget {
   const TermsContentPage({super.key});
@@ -28,7 +29,7 @@ class TermsContentPage extends StatelessWidget {
       body: Stack(
         children: [
           // Background Gradient (Generic app BG)
-           Positioned.fill(
+          Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -43,18 +44,42 @@ class TermsContentPage extends StatelessWidget {
               ),
             ),
           ),
-          
+
           SafeArea(
             child: Markdown(
               data: termsAndConditionsData,
               padding: const EdgeInsets.all(24),
               styleSheet: MarkdownStyleSheet(
-                h1: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                h2: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 2),
-                p: GoogleFonts.inter(color: Colors.white70, fontSize: 14, height: 1.5),
+                h1: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+                h2: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 2,
+                ),
+                p: GoogleFonts.inter(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
                 listBullet: GoogleFonts.inter(color: Colors.white70),
-                strong: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                strong: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              onTapLink: (text, href, title) async {
+                if (href != null) {
+                  final Uri url = Uri.parse(href);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url);
+                  }
+                }
+              },
             ),
           ),
         ],

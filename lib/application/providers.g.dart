@@ -170,7 +170,7 @@ final fileRepositoryProvider = AutoDisposeProvider<FileRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FileRepositoryRef = AutoDisposeProviderRef<FileRepository>;
-String _$vaultServiceHash() => r'1d3c8da911947ae46daffd6af7d6e8c18d3e55f5';
+String _$vaultServiceHash() => r'1ef0d887c8cfd2dc4e8f0d7dc7544f4112aa5b5a';
 
 /// See also [vaultService].
 @ProviderFor(vaultService)
@@ -223,5 +223,22 @@ final adServiceProvider = Provider<AdService>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AdServiceRef = ProviderRef<AdService>;
+String _$expiryServiceHash() => r'0f505855650509cd8e7548ade6113bfc8ae7e8fd';
+
+/// See also [expiryService].
+@ProviderFor(expiryService)
+final expiryServiceProvider = Provider<ExpiryService>.internal(
+  expiryService,
+  name: r'expiryServiceProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$expiryServiceHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ExpiryServiceRef = ProviderRef<ExpiryService>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

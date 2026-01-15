@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TermsDialog extends ConsumerWidget {
   const TermsDialog({super.key});
@@ -25,14 +26,14 @@ class TermsDialog extends ConsumerWidget {
           side: BorderSide(color: Colors.white.withOpacity(0.08)),
         ),
         child: Container(
-           // Limit height to make it look like a dialog, not full screen
+          // Limit height to make it look like a dialog, not full screen
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height * 0.8,
-            maxWidth: 600, 
+            maxWidth: 600,
           ),
           child: Column(
             children: [
-               // Header
+              // Header
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -80,12 +81,36 @@ class TermsDialog extends ConsumerWidget {
                   data: termsAndConditionsData,
                   padding: const EdgeInsets.all(24),
                   styleSheet: MarkdownStyleSheet(
-                    h1: GoogleFonts.inter(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                    h2: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600, height: 2),
-                    p: GoogleFonts.inter(color: Colors.white70, fontSize: 14, height: 1.5),
+                    h1: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    h2: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 2,
+                    ),
+                    p: GoogleFonts.inter(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
                     listBullet: GoogleFonts.inter(color: Colors.white70),
-                    strong: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                    strong: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
+                  onTapLink: (text, href, title) async {
+                    if (href != null) {
+                      final Uri url = Uri.parse(href);
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url);
+                      }
+                    }
+                  },
                 ),
               ),
 
@@ -113,9 +138,11 @@ class TermsDialog extends ConsumerWidget {
                       child: ElevatedButton(
                         onPressed: () async {
                           final navigator = Navigator.of(context);
-                          
+
                           // 1. Mark terms as accepted (This will cause TermsDialog to unmount)
-                          await ref.read(termsNotifierProvider.notifier).acceptTerms();
+                          await ref
+                              .read(termsNotifierProvider.notifier)
+                              .acceptTerms();
 
                           // 2. Show the User Guide Popup immediately
                           if (navigator.mounted) {
@@ -123,7 +150,8 @@ class TermsDialog extends ConsumerWidget {
                               PageRouteBuilder(
                                 opaque: false,
                                 barrierColor: Colors.black54,
-                                pageBuilder: (context, _, __) => const UserGuideDialog(),
+                                pageBuilder: (context, _, __) =>
+                                    const UserGuideDialog(),
                               ),
                             );
                           }
