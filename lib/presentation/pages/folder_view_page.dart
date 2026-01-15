@@ -1003,7 +1003,6 @@ class _FileThumbnail extends HookConsumerWidget {
 
           if (mime.startsWith('image/')) {
             isImageLoading.value = true;
-            print("Debug: File ${file.id} starting decryption...");
 
             // Removed maxImageSize check to ensure all images attempt to load as before
 
