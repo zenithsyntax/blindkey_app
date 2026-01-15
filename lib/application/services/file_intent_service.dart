@@ -14,6 +14,10 @@ class FileIntentNotifier extends StateNotifier<String?> {
   StreamSubscription? _sub;
   static const platform = MethodChannel('com.example.blindkey_app/file_utils');
 
+  // Debounce tracking
+  Uri? _lastProcessedUri;
+  DateTime? _lastProcessedTime;
+
   FileIntentNotifier() : super(null) {
     _init();
   }
@@ -43,6 +47,17 @@ class FileIntentNotifier extends StateNotifier<String?> {
   }
 
   Future<void> _handleUri(Uri uri) async {
+    // Debounce duplicate intents
+    if (_lastProcessedUri == uri &&
+        _lastProcessedTime != null &&
+        DateTime.now().difference(_lastProcessedTime!) <
+            const Duration(seconds: 2)) {
+      debugPrint("Ignoring duplicate intent for URI: $uri");
+      return;
+    }
+    _lastProcessedUri = uri;
+    _lastProcessedTime = DateTime.now();
+
     debugPrint("FileIntentNotifier received URI: $uri");
     debugPrint("FileIntentNotifier Scheme: ${uri.scheme}");
     debugPrint("FileIntentNotifier Path: ${uri.path}");
