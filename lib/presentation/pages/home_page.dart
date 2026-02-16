@@ -182,7 +182,10 @@ class HomePage extends HookConsumerWidget {
               ),
             ],
           ),
-          floatingActionButton: _buildModernFAB(context, isTablet),
+          floatingActionButton: _ExpandableVaultFAB(
+            onCreateVault: () => _showCreateFolderDialog(context),
+            onImportFolder: () => _importFolder(context, ref, isImporting),
+          ),
         ),
 
         // Terms Overlay
@@ -323,28 +326,7 @@ class HomePage extends HookConsumerWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                onPressed: () => _importFolder(context, ref, isImporting),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.white.withOpacity(0.05),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Colors.white.withOpacity(0.1)),
-                  ),
-                  padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
-                  minimumSize: Size(
-                    isSmallScreen ? 36 : 40,
-                    isSmallScreen ? 36 : 40,
-                  ),
-                ),
-                icon: Icon(
-                  Icons.create_new_folder_outlined,
-                  color: Colors.white70,
-                  size: isSmallScreen ? 18 : 20,
-                ),
-                tooltip: 'Import Local Folder',
-              ),
-              SizedBox(width: isSmallScreen ? 6 : 8),
+              
               IconButton(
                 onPressed: () => _importVault(context, ref, isImporting),
                 style: IconButton.styleFrom(
@@ -916,27 +898,10 @@ class HomePage extends HookConsumerWidget {
     );
   }
 
-  Widget _buildModernFAB(BuildContext context, bool isTablet) {
-    return FloatingActionButton.extended(
-      onPressed: () => _showCreateFolderDialog(context),
-
-      backgroundColor: const Color(0xFFC62828), // Professional Deep Red
-      foregroundColor: Colors.white,
-      elevation: 4,
-      icon: const Icon(Icons.add_rounded),
-      label: Text(
-        'New Vault',
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.2,
-        ),
-      ),
-    );
-  }
-
   void _showCreateFolderDialog(BuildContext context) {
     showDialog(context: context, builder: (_) => const CreateFolderDialog());
   }
+
 
   Future<void> _importVault(
     BuildContext context,
@@ -1362,6 +1327,7 @@ class HomePage extends HookConsumerWidget {
     );
   }
 }
+
 
 Future<void> _handleImportIntent(
   BuildContext context,
@@ -1849,4 +1815,144 @@ Future<void> _showImportFolderDialog(
       },
     ),
   );
+}
+
+class _ExpandableVaultFAB extends HookConsumerWidget {
+  final VoidCallback onCreateVault;
+  final VoidCallback onImportFolder;
+
+  const _ExpandableVaultFAB({
+    required this.onCreateVault,
+    required this.onImportFolder,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isExpanded = useState(false);
+    final animationController = useAnimationController(
+      duration: const Duration(milliseconds: 300),
+    );
+
+    useEffect(() {
+      if (isExpanded.value) {
+        animationController.forward();
+      } else {
+        animationController.reverse();
+      }
+      return null;
+    }, [isExpanded.value]);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (isExpanded.value || animationController.isAnimating)
+          FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animationController,
+              curve: Curves.easeOut,
+            ),
+            child: ScaleTransition(
+              scale: CurvedAnimation(
+                parent: animationController,
+                curve: Curves.easeOutBack,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildFabOption(
+                    context,
+                    icon: Icons.drive_folder_upload_outlined, // Changed icon for import folder
+                    label: "Upload Folder",
+                    onPressed: () {
+                      isExpanded.value = false;
+                      onImportFolder();
+                    },
+                    delay: 0,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFabOption(
+                    context,
+                    icon: Icons.create_new_folder_outlined, // Changed icon for create new vault
+                    label: "Create New Vault", // Changed label to match prompt better
+                    onPressed: () {
+                      isExpanded.value = false;
+                      onCreateVault();
+                    },
+                    delay: 100,
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          ),
+        
+        FloatingActionButton(
+          onPressed: () {
+            isExpanded.value = !isExpanded.value;
+          },
+          backgroundColor: const Color(0xFFC62828),
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shape: const CircleBorder(),
+          child: RotationTransition(
+            turns: Tween(begin: 0.0, end: 0.125).animate(CurvedAnimation(
+              parent: animationController,
+              curve: Curves.easeInOut,
+            )),
+            child: const Icon(Icons.add_rounded, size: 28),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFabOption(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required int delay,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        FloatingActionButton.small(
+          onPressed: onPressed,
+          backgroundColor: const Color(0xFF1E1E1E),
+          foregroundColor: Colors.white,
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Icon(icon, size: 20),
+        ),
+      ],
+    );
+  }
 }

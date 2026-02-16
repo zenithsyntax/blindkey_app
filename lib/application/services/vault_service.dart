@@ -925,7 +925,199 @@ class VaultService {
         return 'application/octet-stream';
     }
   }
+
+  Stream<double> importFilesBulk({
+    required List<File> files,
+    required String folderId,
+    required SecretKey folderKey,
+  }) async* {
+    if (files.isEmpty) return;
+
+    final items = <_IsolateBulkEncryptionItem>[];
+    final fileModels = <int, FileModel>{};
+    // Pre-calculate everything on Main Thread
+    for (var i = 0; i < files.length; i++) {
+      final originalFile = files[i];
+      final fileKey = await _cryptoService.generateRandomKey();
+      final fileKeyBytes = await fileKey.extractBytes();
+
+      final vaultPathResult = await _storageService.createEncryptedFileDir();
+      if (vaultPathResult.isLeft()) throw Exception("Storage Error");
+      final vaultPath = vaultPathResult.getOrElse(() => '');
+
+      final fileId = const Uuid().v4();
+      final destPath = '$vaultPath/$fileId.enc';
+
+      items.add(
+        _IsolateBulkEncryptionItem(
+          index: i,
+          inputPath: originalFile.path,
+          outputPath: destPath,
+          keyBytes: fileKeyBytes,
+        ),
+      );
+
+      // Prepare Metadata
+      final metadata = FileMetadata(
+        id: fileId,
+        fileName: originalFile.path.split(Platform.pathSeparator).last,
+        size: await originalFile.length(),
+        mimeType: _getMimeType(originalFile.path),
+        encryptedFilePath: destPath,
+        fileKey: base64Encode(fileKeyBytes),
+        nonce: "",
+        allowSaveToDownloads: true,
+        expiryDate: null,
+      );
+
+      final metadataJson = jsonEncode(metadata.toJson());
+      final encryptedMetadataRes = await _cryptoService.encryptData(
+        data: utf8.encode(metadataJson),
+        key: folderKey,
+      );
+      if (encryptedMetadataRes.isLeft()) continue;
+      final encryptedMetadata = encryptedMetadataRes.getOrElse(() => []);
+
+      fileModels[i] = FileModel(
+        id: fileId,
+        folderId: folderId,
+        encryptedMetadata: base64Encode(encryptedMetadata),
+        encryptedPreviewPath: "",
+        expiryDate: null,
+      );
+    }
+
+    // Spawn Isolate
+    final receivePort = ReceivePort();
+    await Isolate.spawn(
+      _isolateBulkEncryptionEntry,
+      _IsolateBulkEncryptionArgs(sendPort: receivePort.sendPort, items: items),
+    );
+
+    // Listen
+    int completed = 0;
+    await for (final message in receivePort) {
+      if (message is int) {
+        // Success for index
+        final index = message;
+        if (fileModels.containsKey(index)) {
+          final fileModel = fileModels[index]!;
+          await _fileRepository.saveFileModel(fileModel);
+
+          // Helper to generate thumbnail without blocking too much?
+          // Only image/video
+          await _thumbnailService.generateThumbnail(
+            originalPath: files[index].path,
+            fileId: fileModel.id,
+            key: folderKey,
+          );
+        }
+        completed++;
+        yield completed / files.length;
+      } else if (message == "DONE") {
+        break;
+      } else if (message is String && message.startsWith("ERROR")) {
+        print("Bulk Import Error: $message");
+      }
+    }
+  }
 } // Closed VaultService
+
+class _IsolateBulkEncryptionItem {
+  final int index;
+  final String inputPath;
+  final String outputPath;
+  final List<int> keyBytes;
+
+  _IsolateBulkEncryptionItem({
+    required this.index,
+    required this.inputPath,
+    required this.outputPath,
+    required this.keyBytes,
+  });
+}
+
+class _IsolateBulkEncryptionArgs {
+  final SendPort sendPort;
+  final List<_IsolateBulkEncryptionItem> items;
+
+  _IsolateBulkEncryptionArgs({required this.sendPort, required this.items});
+}
+
+Future<void> _isolateBulkEncryptionEntry(
+  _IsolateBulkEncryptionArgs args,
+) async {
+  final algorithm = AesGcm.with256bits();
+  final chunkSize = 1024 * 1024; // 1MB
+
+  for (final item in args.items) {
+    try {
+      final inFile = File(item.inputPath);
+      final outFile = File(item.outputPath);
+
+      // Ensure file exists
+      if (!inFile.existsSync()) {
+        args.sendPort.send("ERROR:${item.index}:File not found");
+        continue;
+      }
+
+      final inStream = inFile.openRead();
+      final outSink = outFile.openWrite();
+      final secretKey = SecretKey(item.keyBytes);
+
+      int chunkIndex = 0;
+      List<int> buffer = [];
+
+      await for (final chunk in inStream) {
+        buffer.addAll(chunk);
+        while (buffer.length >= chunkSize) {
+          final toProcess = buffer.sublist(0, chunkSize);
+          buffer = buffer.sublist(chunkSize);
+
+          final nonce = List<int>.filled(12, 0);
+          var tempIndex = chunkIndex;
+          for (var i = 11; i >= 8; i--) {
+            nonce[i] = tempIndex & 0xFF;
+            tempIndex >>= 8;
+          }
+
+          final secretBox = await algorithm.encrypt(
+            toProcess,
+            secretKey: secretKey,
+            nonce: nonce,
+          );
+
+          outSink.add(secretBox.concatenation());
+          chunkIndex++;
+        }
+      }
+
+      if (buffer.isNotEmpty) {
+        final nonce = List<int>.filled(12, 0);
+        var tempIndex = chunkIndex;
+        for (var i = 11; i >= 8; i--) {
+          nonce[i] = tempIndex & 0xFF;
+          tempIndex >>= 8;
+        }
+
+        final secretBox = await algorithm.encrypt(
+          buffer,
+          secretKey: secretKey,
+          nonce: nonce,
+        );
+        outSink.add(secretBox.concatenation());
+      }
+
+      await outSink.flush();
+      await outSink.close();
+
+      args.sendPort.send(item.index); // Success, send index back
+    } catch (e) {
+      args.sendPort.send("ERROR:${item.index}:$e");
+    }
+  }
+  args.sendPort.send("DONE");
+}
 
 class _IsolateEncryptionArgs {
   final SendPort checkSendPort;

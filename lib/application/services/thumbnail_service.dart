@@ -196,8 +196,8 @@ Future<void> _generateEncryptedThumbnailWorker(_GenThumbArgs args) async {
     final image = img.decodeImage(bytes);
     if (image == null) return;
 
-    final resized = img.copyResize(image, width: 150);
-    final jpgBytes = img.encodeJpg(resized, quality: 35);
+    final resized = img.copyResize(image, width: 300);
+    final jpgBytes = img.encodeJpg(resized, quality: 75);
 
     // 2. Encryption
     final algorithm = AesGcm.with256bits();
@@ -221,8 +221,8 @@ Future<void> _generateEncryptedThumbnailBytesWorker(
     final image = img.decodeImage(args.bytes);
     if (image == null) return;
 
-    final resized = img.copyResize(image, width: 150);
-    final jpgBytes = img.encodeJpg(resized, quality: 35);
+    final resized = img.copyResize(image, width: 300);
+    final jpgBytes = img.encodeJpg(resized, quality: 75);
 
     // 2. Encryption
     final algorithm = AesGcm.with256bits();
@@ -294,8 +294,8 @@ Future<void> _generateFromEncryptedFileWorker(
     if (image == null) return;
 
     // 3. Resize
-    final resized = img.copyResize(image, width: 150);
-    final jpgBytes = img.encodeJpg(resized, quality: 35);
+    final resized = img.copyResize(image, width: 300);
+    final jpgBytes = img.encodeJpg(resized, quality: 75);
 
     // 4. Encrypt Thumbnail with FOLDER KEY
     final folderKey = SecretKey(args.folderKeyBytes);

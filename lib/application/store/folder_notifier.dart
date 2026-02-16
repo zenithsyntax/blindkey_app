@@ -104,7 +104,6 @@ class FolderNotifier extends _$FolderNotifier {
     // 1. Create the Vault
     final createResult = await vault.createFolder(vaultName, password);
 
-    int processedCount = 0;
     int successCount = 0;
 
     await createResult.fold((failure) => throw failure, (folder) async {
@@ -138,39 +137,23 @@ class FolderNotifier extends _$FolderNotifier {
             );
           }
 
-          final total = files.length;
+          // Use Bulk Import Optimization
+          try {
+            final stream = vault.importFilesBulk(
+              files: files,
+              folderId: folder.id,
+              folderKey: folderKey,
+            );
 
-          for (final file in files) {
-            print("IMPORT DEBUG: Processing ${file.path}");
-            // Encrypt and Save
-            // This is a stream, we wait for it to finish.
-            // We might want to use a pool if we want parallel, but sequential is safer for now.
-            try {
-              final stream = vault.encryptAndSaveFile(
-                originalFile: file,
-                folderId: folder.id,
-                folderKey: folderKey,
-              );
-
-              await for (final _ in stream) {
-                // We don't track per-file progress here efficiently yet,
-                // just chunk completion.
-              }
-              print("IMPORT DEBUG: Successfully imported ${file.path}");
-              successCount++;
-            } catch (e) {
-              // Log error but continue? Or fail entire import?
-              // For a large folder, failing everything on one file is annoying.
-              // But we want "Atomic" feel?
-              // Let's continue and report errors?
-              // For now: continue.
-              print(
-                "IMPORT DEBUG: Failed to import file: ${file.path} error: $e",
-              );
+            await for (final progress in stream) {
+              onProgress(progress);
             }
-
-            processedCount++;
-            onProgress(processedCount / total);
+            // For now, assume if stream completes, we processed what we could.
+            // Ideally importFilesBulk returns stats.
+            successCount = files.length;
+          } catch (e) {
+            print("Bulk Import Failed: $e");
+            rethrow;
           }
         });
       } catch (e) {

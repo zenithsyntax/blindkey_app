@@ -2,12 +2,12 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AdService {
   // Ad Unit IDs
-  static const String appId = 'ca-app-pub-9698718721404755~6165833882';
-  static const String homeBannerAdId = 'ca-app-pub-9698718721404755/4358762340';
-  static const String folderViewBannerAdId = 'ca-app-pub-9698718721404755/6114697140';
-  static const String fileViewBannerAdId = 'ca-app-pub-9698718721404755/3936747059';
-  static const String importFileInterstitialAdId = 'ca-app-pub-9698718721404755/1521486641';
-  static const String importBlindKeyInterstitialAdId = 'ca-app-pub-9698718721404755/1485186998';
+  static const String appId = 'ca-app-pub-3265595931244532~3006982142';
+  static const String homeBannerAdId = 'ca-app-pub-3265595931244532/4820415823';
+  static const String folderViewBannerAdId = 'ca-app-pub-3265595931244532/8568089149';
+  static const String fileViewBannerAdId = 'ca-app-pub-3265595931244532/1418568307';
+  static const String importFileInterstitialAdId = 'ca-app-pub-3265595931244532/6061345304';
+  static const String importBlindKeyInterstitialAdId = 'ca-app-pub-3265595931244532/6136542513';
 
   // Interstitial ad instances
   InterstitialAd? _importFileInterstitialAd;
