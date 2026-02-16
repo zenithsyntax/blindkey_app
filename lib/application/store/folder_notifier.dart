@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
+import 'package:blindkey_app/domain/failures/failures.dart'; // Added explicit import
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -88,6 +91,97 @@ class FolderNotifier extends _$FolderNotifier {
         ref.invalidateSelf(); // Refresh list to show imported folder
       },
     );
+  }
+
+  Future<int> importLocalFolder({
+    required String folderPath,
+    required String vaultName,
+    required String password,
+    required Function(double) onProgress,
+  }) async {
+    final vault = ref.read(vaultServiceProvider);
+
+    // 1. Create the Vault
+    final createResult = await vault.createFolder(vaultName, password);
+
+    int processedCount = 0;
+    int successCount = 0;
+
+    await createResult.fold((failure) => throw failure, (folder) async {
+      try {
+        // 2. Derive Key (Need it for encryption)
+        // Since we just created it with 'password', we can verify/get it.
+        // Or just re-derive it manually to save a "Decrypt Verify" step,
+        // but verifyPasswordAndGetKey is safer as it handles salt reading.
+        final keyResult = await vault.verifyPasswordAndGetKey(folder, password);
+
+        await keyResult.fold((failure) => throw failure, (folderKey) async {
+          // 3. List Files from Directory (Recursive)
+          final dir = Directory(folderPath);
+          if (!await dir.exists())
+            throw Exception(
+              ErrorMapper.getUserFriendlyError("Folder not found"),
+            ); // Changed to Exception for consistency
+
+          final entities = await dir
+              .list(recursive: true, followLinks: false)
+              .toList();
+          final files = entities.whereType<File>().toList();
+
+          print(
+            "IMPORT DEBUG: Found ${entities.length} entities, ${files.length} files in ${dir.path}",
+          );
+
+          if (files.isEmpty) {
+            throw Failure.unexpected(
+              "No files found in selected folder. (Found ${entities.length} items in ${dir.path})",
+            );
+          }
+
+          final total = files.length;
+
+          for (final file in files) {
+            print("IMPORT DEBUG: Processing ${file.path}");
+            // Encrypt and Save
+            // This is a stream, we wait for it to finish.
+            // We might want to use a pool if we want parallel, but sequential is safer for now.
+            try {
+              final stream = vault.encryptAndSaveFile(
+                originalFile: file,
+                folderId: folder.id,
+                folderKey: folderKey,
+              );
+
+              await for (final _ in stream) {
+                // We don't track per-file progress here efficiently yet,
+                // just chunk completion.
+              }
+              print("IMPORT DEBUG: Successfully imported ${file.path}");
+              successCount++;
+            } catch (e) {
+              // Log error but continue? Or fail entire import?
+              // For a large folder, failing everything on one file is annoying.
+              // But we want "Atomic" feel?
+              // Let's continue and report errors?
+              // For now: continue.
+              print(
+                "IMPORT DEBUG: Failed to import file: ${file.path} error: $e",
+              );
+            }
+
+            processedCount++;
+            onProgress(processedCount / total);
+          }
+        });
+      } catch (e) {
+        // If something fails AFTER creating folder, we might want to delete the folder?
+        // User can manually delete it.
+        rethrow;
+      }
+    });
+
+    ref.invalidateSelf();
+    return successCount;
   }
 
   Future<dynamic> unlockFolder(String folderId, String password) async {

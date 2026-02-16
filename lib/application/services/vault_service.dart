@@ -54,7 +54,7 @@ class VaultService {
     this._thumbnailService,
   );
 
-  Future<Either<Failure, Unit>> createFolder(
+  Future<Either<Failure, FolderModel>> createFolder(
     String name,
     String password,
   ) async {
@@ -63,34 +63,9 @@ class VaultService {
         (k) => k.extractBytes(),
       );
       final key = await _cryptoService.deriveKeyFromPassword(password, salt);
-      final keyBytes = await key.extractBytes();
+      // final keyBytes = await key.extractBytes(); // Unused
 
-      // We store HASH of the key to verify password.
-      // Actually, standard is: Store Salt.
-      // On Login: Derive Key(Pass, Salt).
-      // To Verify: We need a "Verification Hash".
-      // Usually, we verify by successfully decrypting a known value (e.g. metadata).
-      // Or we store Hash(Key).
-      // Let's store Hash(Key) as verificationHash.
-      // But we shouldn't store Hash(Key) directly if Key is used for encryption?
-      // Better: Derive TWO keys from password? Or Key and Auth Key?
-      // Simple approach: Store Hash(Password, Salt). Use Key(Password, Salt) for encryption.
-      // Wait, Argon2 produces a key.
-      // If we use the SAME parameters, we get the same 32 bytes.
-      // If we store Hash(OutputBytes), and attacker gets DB, they have Hash(Key).
-      // If they crack Hash(Key), they have Key.
-      // So verificationHash should be a SEPARATE derivation or hash of the key.
-      // Let's just use a known encrypted string.
-      // "FolderModel" has `verificationHash`.
-      // Let's treat `verificationHash` as: Encrypt("BlindKey", Key).
-      // If we can decrypt it and get "BlindKey", password is correct.
-
-      // IMPLEMENTATION:
-      // 1. Generate Salt.
-      // 2. Derive Key.
-      // 3. Encrypt string "VERIFY" with Key.
-      // 4. Store Salt and EncryptedString.
-
+      // WE ENCRYPT 'VERIFY' TO VALIDATE PASSWORD LATER
       final verificationEnc = await _cryptoService.encryptData(
         data: utf8.encode('VERIFY'),
         key: key,
@@ -104,7 +79,8 @@ class VaultService {
           verificationHash: base64Encode(encryptedBytes),
           createdAt: DateTime.now(),
         );
-        return await _folderRepository.saveFolder(folder);
+        final saveResult = await _folderRepository.saveFolder(folder);
+        return saveResult.fold((l) => left(l), (_) => right(folder));
       });
     } on FileSystemException catch (e) {
       return left(Failure.fileSystemError(e.message));

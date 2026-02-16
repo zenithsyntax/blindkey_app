@@ -1,7 +1,7 @@
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/application/services/file_intent_service.dart';
-import 'package:blindkey_app/domain/failures/failures.dart';
+import 'package:blindkey_app/application/services/file_intent_service.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
 import 'package:blindkey_app/presentation/dialogs/terms_dialog.dart';
@@ -12,12 +12,14 @@ import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cryptography/cryptography.dart';
-import 'package:cryptography/cryptography.dart';
 import 'dart:ui';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart'; // Added import
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
 import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
@@ -322,6 +324,28 @@ class HomePage extends HookConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
+                onPressed: () => _importFolder(context, ref, isImporting),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.05),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+                  minimumSize: Size(
+                    isSmallScreen ? 36 : 40,
+                    isSmallScreen ? 36 : 40,
+                  ),
+                ),
+                icon: Icon(
+                  Icons.create_new_folder_outlined,
+                  color: Colors.white70,
+                  size: isSmallScreen ? 18 : 20,
+                ),
+                tooltip: 'Import Local Folder',
+              ),
+              SizedBox(width: isSmallScreen ? 6 : 8),
+              IconButton(
                 onPressed: () => _importVault(context, ref, isImporting),
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.white.withOpacity(0.05),
@@ -376,6 +400,76 @@ class HomePage extends HookConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _importFolder(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isImporting,
+  ) async {
+    try {
+      if (Platform.isAndroid) {
+        var status = await Permission.manageExternalStorage.status;
+        if (!status.isGranted) {
+          status = await Permission.manageExternalStorage.request();
+        }
+
+        if (!status.isGranted) {
+          if (context.mounted) {
+            CustomSnackbar.showError(
+              context,
+              "Storage permission required to import folders.",
+            );
+          }
+          return;
+        }
+      }
+
+      final path = await FilePicker.platform.getDirectoryPath();
+      if (path == null) return;
+
+      // 1. Check size
+      isImporting.value = true;
+      final dir = Directory(path);
+      int totalSize = 0;
+      await for (final entity in dir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File) {
+          totalSize += await entity.length();
+        }
+      }
+
+      // 2GB Limit
+      if (totalSize > 2 * 1024 * 1024 * 1024) {
+        isImporting.value = false;
+        if (context.mounted) {
+          CustomSnackbar.showError(
+            context,
+            'Folder size exceeds 2GB limit. Please select a smaller folder.',
+          );
+        }
+        return;
+      }
+
+      isImporting.value = false;
+
+      // 2. Show Dialog to get Vault Name and Password
+      if (context.mounted) {
+        _showImportFolderDialog(
+          context,
+          ref,
+          path,
+          dir.path.split(Platform.pathSeparator).last,
+        );
+      }
+    } catch (e) {
+      isImporting.value = false;
+      if (context.mounted) {
+        CustomSnackbar.showError(context, 'Failed to read folder: $e');
+      }
+    }
   }
 
   Widget _buildEmptyState(
@@ -1477,6 +1571,267 @@ Future<void> _showImportPasswordDialog(
                         onPressed: () {
                           // Refresh provider state when canceling to ensure no error state persists
                           ref.invalidate(folderNotifierProvider);
+                          Navigator.pop(context);
+                        },
+                        child: Text(
+                          "Cancel",
+                          style: GoogleFonts.inter(color: Colors.white54),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+Future<void> _showImportFolderDialog(
+  BuildContext context,
+  WidgetRef ref,
+  String path,
+  String defaultName,
+) async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => HookConsumer(
+      builder: (context, ref, child) {
+        final nameController = useTextEditingController(text: defaultName);
+        final passwordController = useTextEditingController();
+        final confirmPasswordController = useTextEditingController(); // Added
+        final isLoading = useState(false);
+        final errorText = useState<String?>(null);
+        final isObscured = useState(true);
+        final isConfirmObscured = useState(true); // Added
+        final progress = useState(0.0);
+
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Dialog(
+            backgroundColor: const Color(0xFF1A1A1A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 24),
+                    Text(
+                      'Import Folder',
+                      style: GoogleFonts.inter(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Create a new vault from this folder',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: nameController,
+                      enabled: !isLoading.value,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Vault Name',
+                        hintStyle: GoogleFonts.inter(color: Colors.white30),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.folder_outlined,
+                          color: Colors.white30,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: isObscured.value,
+                      enabled: !isLoading.value,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Password',
+                        hintStyle: GoogleFonts.inter(color: Colors.white30),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        errorText: errorText.value,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        errorMaxLines: 3,
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Colors.white30,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            isObscured.value
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: Colors.white30,
+                          ),
+                          onPressed: () {
+                            isObscured.value = !isObscured.value;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: confirmPasswordController,
+                      obscureText: isConfirmObscured.value,
+                      enabled: !isLoading.value,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Confirm Password',
+                        hintStyle: GoogleFonts.inter(color: Colors.white30),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: Colors.white30,
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            isConfirmObscured.value
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: Colors.white30,
+                          ),
+                          onPressed: () {
+                            isConfirmObscured.value = !isConfirmObscured.value;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    if (isLoading.value) ...[
+                      LinearProgressIndicator(
+                        value: progress.value,
+                        backgroundColor: Colors.white10,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Importing... ${(progress.value * 100).toStringAsFixed(0)}%",
+                        style: GoogleFonts.inter(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isLoading.value
+                            ? null
+                            : () async {
+                                if (nameController.text.isEmpty) {
+                                  errorText.value = "Please enter a vault name";
+                                  return;
+                                }
+                                if (passwordController.text.isEmpty) {
+                                  errorText.value = "Please enter a password";
+                                  return;
+                                }
+                                if (passwordController.text !=
+                                    confirmPasswordController.text) {
+                                  errorText.value = "Passwords do not match";
+                                  return;
+                                }
+
+                                isLoading.value = true;
+                                errorText.value = null;
+
+                                await Future.delayed(
+                                  const Duration(milliseconds: 50),
+                                );
+
+                                try {
+                                  final count = await ref
+                                      .read(folderNotifierProvider.notifier)
+                                      .importLocalFolder(
+                                        folderPath: path,
+                                        vaultName: nameController.text,
+                                        password: passwordController.text,
+                                        onProgress: (p) {
+                                          progress.value = p;
+                                        },
+                                      );
+
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    CustomSnackbar.showSuccess(
+                                      context,
+                                      'Imported $count files successfully',
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    isLoading.value = false;
+                                    errorText.value =
+                                        ErrorMapper.getUserFriendlyError(e);
+                                    ref.invalidate(folderNotifierProvider);
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBackgroundColor: Colors.white24,
+                          disabledForegroundColor: Colors.white38,
+                        ),
+                        child: isLoading.value
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70,
+                                ),
+                              )
+                            : Text(
+                                'Import',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                    if (!isLoading.value) ...[
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
                           Navigator.pop(context);
                         },
                         child: Text(
