@@ -30,6 +30,8 @@ import 'package:auto_size_text/auto_size_text.dart';
 import 'package:blindkey_app/application/services/upload_prefs_service.dart';
 import 'package:blindkey_app/presentation/dialogs/upload_info_dialog.dart';
 import 'package:blindkey_app/application/services/thumbnail_service.dart';
+import 'package:blindkey_app/application/services/thumbnail_queue_service.dart';
+import 'package:blindkey_app/application/store/thumbnail_providers.dart';
 
 class FolderViewPage extends HookConsumerWidget {
   final FolderModel folder;
@@ -923,144 +925,41 @@ class _FileThumbnail extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    useAutomaticKeepAlive(wantKeepAlive: true);
-    final isMounted = useIsMounted();
+    // REMOVED useAutomaticKeepAlive to fix memory issues with large lists
 
-    // State for metadata and image
-    final metadataState = useState<FileMetadata?>(null);
-    final imageBytesState = useState<Uint8List?>(null);
-    final thumbnailBytesState = useState<Uint8List?>(null); // Changed to bytes
-    // Track if we should show a loader for image
-    final isImageLoading = useState(false);
+    // 1. Cached Metadata Provider (prevents re-decryption on scroll)
+    final metaAsync = ref.watch(fileMetadataProvider(file, folderKey));
 
+    // 2. Cached Thumbnail Provider (rebuilds only when thumbnail generated)
+    final thumbAsync = ref.watch(fileThumbnailProvider(file, folderKey));
+
+    // Side Effect: Trigger generation if needed
+    // We need to know if it's an image.
     useEffect(() {
-      bool isCancelled = false;
+      if (metaAsync.hasValue && thumbAsync.valueOrNull == null) {
+        final meta = metaAsync.requireValue;
+        String mime = meta.mimeType; // Simplified check from prev logic
+        // Legacy fix logic is complicated to duplicate here.
+        // Ideally we move MIME fix logic to fileMetadataProvider or FileModel.
 
-      Future<void> load() async {
-        if (isCancelled) return;
+        // Simple check:
+        bool isImage = mime.startsWith('image/');
+        if (mime == 'application/octet-stream') {
+          final ext = meta.fileName.split('.').last.toLowerCase();
+          if (['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext))
+            isImage = true;
+        }
 
-        try {
-          // 0. Check for Local Thumbnail first (Fast path)
-          final thumbService = ref.read(thumbnailServiceProvider);
-          // Now returns bytes (decrypted)
-          final thumbBytes = await thumbService.getThumbnail(
-            fileId: file.id,
-            key: folderKey,
-          );
-
-          if (!isCancelled && thumbBytes != null) {
-            thumbnailBytesState.value = thumbBytes;
-          } // We still need metadata to know mime type for opening correct viewer?
-          // Or just to show name.
-          // If we have thumbnail, we can defer metadata decryption until tap?
-          // No, we likely need metadata for the label (filename) in the grid if shown.
-          // But _FileThumbnail usually implies just the image.
-          // Let's see if we can skip full decryption loop if we have thumbnail.
-
-          if (isCancelled) return;
-
-          final vault = ref.read(vaultServiceProvider);
-
-          // 1. Decrypt Metadata (Fast enough usually)
-          final metaRes = await vault.decryptMetadata(
-            file: file,
-            folderKey: folderKey,
-          );
-          if (isCancelled || !isMounted()) return;
-
-          final meta = metaRes.getOrElse(
-            () => throw Exception(
-              ErrorMapper.getUserFriendlyError("Decryption failed"),
-            ),
-          );
-          metadataState.value = meta;
-
-          // If we already have thumbnail, we don't need to decrypt full file!
-          if (thumbnailBytesState.value != null) return;
-
-          // 2. Determine if Image (Old path for existing files without thumbnail)
-          String mime = meta.mimeType;
-          // Fix legacy mime types
-          if (mime == 'application/octet-stream') {
-            // ... (existing mime fix logic) ...
-            final ext = meta.fileName.split('.').last.toLowerCase();
-            switch (ext) {
-              case 'jpg':
-              case 'jpeg':
-                mime = 'image/jpeg';
-                break;
-              case 'png':
-                mime = 'image/png';
-                break;
-              case 'gif':
-                mime = 'image/gif';
-                break;
-              case 'webp':
-                mime = 'image/webp';
-                break;
-            }
-          }
-
-          if (mime.startsWith('image/')) {
-            isImageLoading.value = true;
-
-            // Removed maxImageSize check to ensure all images attempt to load as before
-
-            final stream = vault.decryptFileStream(
-              file: file,
-              folderKey: folderKey,
-            );
-            final bytes = <int>[];
-
-            // OPTIMIZATION: Check cancellation during stream loop
-            await for (final chunk in stream) {
-              if (isCancelled || !isMounted()) break;
-              bytes.addAll(chunk);
-            }
-
-            if (!isCancelled && isMounted()) {
-              imageBytesState.value = Uint8List.fromList(bytes);
-
-              // Self-healing: Generate thumbnail if missing
-              // Wait for it so we can show it immediately
-              try {
-                await ref
-                    .read(thumbnailServiceProvider)
-                    .generateThumbnailFromBytes(
-                      bytes: imageBytesState.value!,
-                      fileId: file.id,
-                      key: folderKey,
-                    );
-
-                // Refresh local thumbnail state
-                if (context.mounted) {
-                  final newThumb = await ref
-                      .read(thumbnailServiceProvider)
-                      .getThumbnail(fileId: file.id, key: folderKey);
-                  if (newThumb != null) {
-                    thumbnailBytesState.value = newThumb;
-                  }
-                }
-              } catch (e) {
-                print("Self-healing failed: $e");
-              }
-            }
-            if (isMounted()) isImageLoading.value = false;
-          }
-        } catch (e) {
-          if (isMounted()) {
-            // Handle error if needed
-            isImageLoading.value = false;
-          }
+        if (isImage) {
+          // Dispatch enqueue
+          // We use a microtask to avoid setState during build
+          Future.microtask(() {
+            ref.read(thumbnailQueueServiceProvider).enqueue(file, folderKey);
+          });
         }
       }
-
-      load();
-
-      return () {
-        isCancelled = true;
-      };
-    }, [file.id]); // Re-run if file ID changes
+      return null;
+    }, [metaAsync.asData, thumbAsync.asData]);
 
     final isExpired =
         file.expiryDate != null &&
@@ -1086,8 +985,7 @@ class _FileThumbnail extends HookConsumerWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onLongPress: () {
-              if (isExpired)
-                return; // Expired files handle tap only (to delete/notify)
+              if (isExpired) return;
 
               showModalBottomSheet(
                 context: context,
@@ -1117,7 +1015,7 @@ class _FileThumbnail extends HookConsumerWidget {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Text(
-                            metadataState.value?.fileName ?? "File Options",
+                            metaAsync.valueOrNull?.fileName ?? "File Options",
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -1285,10 +1183,8 @@ class _FileThumbnail extends HookConsumerWidget {
                 // Background / Content
                 Positioned.fill(
                   child: _buildContent(
-                    metadataState.value,
-                    imageBytesState.value,
-                    isImageLoading.value,
-                    thumbnailBytesState.value,
+                    metaAsync.valueOrNull,
+                    thumbAsync.valueOrNull,
                   ),
                 ),
                 // Footer Gradient for Text
@@ -1311,7 +1207,7 @@ class _FileThumbnail extends HookConsumerWidget {
                     child: Text(
                       isExpired
                           ? 'Expired'
-                          : (metadataState.value?.fileName ?? '...'),
+                          : (metaAsync.valueOrNull?.fileName ?? '...'),
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: isExpired
@@ -1369,12 +1265,7 @@ class _FileThumbnail extends HookConsumerWidget {
     );
   }
 
-  Widget _buildContent(
-    FileMetadata? meta,
-    Uint8List? imgBytes,
-    bool isLoadingImg,
-    Uint8List? thumbBytes,
-  ) {
+  Widget _buildContent(FileMetadata? meta, Uint8List? thumbBytes) {
     // 0. Check Thumbnail first
     if (thumbBytes != null) {
       return Image.memory(
@@ -1434,25 +1325,7 @@ class _FileThumbnail extends HookConsumerWidget {
     }
 
     if (mime.startsWith('image/')) {
-      if (isLoadingImg) {
-        return const Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white10,
-          ),
-        );
-      }
-      if (imgBytes != null) {
-        return Image.memory(
-          imgBytes,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const Center(
-            child: Icon(Icons.broken_image_rounded, color: Colors.white24),
-          ),
-          // Optimization: Resize in memory cache to save RAM
-          cacheWidth: 300,
-        );
-      }
+      // Just show placeholder until generation completes
       return const Center(
         child: Icon(Icons.image_rounded, size: 32, color: Colors.white24),
       );

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:blindkey_app/domain/models/file_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
@@ -111,6 +112,37 @@ class ThumbnailService {
     }
   }
 
+  Future<void> generateThumbnailFromEncryptedFile({
+    required String encryptedFilePath,
+    required String fileId,
+    required SecretKey fileKey,
+    required SecretKey folderKey,
+    required FileMetadata metadata,
+  }) async {
+    try {
+      final dirPath = await _thumbnailsPath;
+      final destPath = p.join(dirPath, '$fileId.enc');
+      final destFile = File(destPath);
+      if (await destFile.exists()) return;
+
+      final fileKeyBytes = await fileKey.extractBytes();
+      final folderKeyBytes = await folderKey.extractBytes();
+
+      await compute(
+        _generateFromEncryptedFileWorker,
+        _GenFromEncryptedFileArgs(
+          encryptedFilePath: encryptedFilePath,
+          destPath: destPath,
+          fileKeyBytes: fileKeyBytes,
+          folderKeyBytes: folderKeyBytes,
+          mimeType: metadata.mimeType,
+        ),
+      );
+    } catch (e) {
+      debugPrint('ThumbnailService: Error generating from encrypted file: $e');
+    }
+  }
+
   Future<void> deleteThumbnail(String fileId) async {
     try {
       final dirPath = await _thumbnailsPath;
@@ -138,6 +170,22 @@ class _GenThumbBytesArgs {
   _GenThumbBytesArgs(this.bytes, this.dest, this.keyBytes);
 }
 
+class _GenFromEncryptedFileArgs {
+  final String encryptedFilePath;
+  final String destPath;
+  final List<int> fileKeyBytes;
+  final List<int> folderKeyBytes;
+  final String mimeType;
+
+  _GenFromEncryptedFileArgs({
+    required this.encryptedFilePath,
+    required this.destPath,
+    required this.fileKeyBytes,
+    required this.folderKeyBytes,
+    required this.mimeType,
+  });
+}
+
 Future<void> _generateEncryptedThumbnailWorker(_GenThumbArgs args) async {
   final file = File(args.path);
   if (!file.existsSync()) return;
@@ -161,7 +209,7 @@ Future<void> _generateEncryptedThumbnailWorker(_GenThumbArgs args) async {
     // 3. Save
     await File(args.dest).writeAsBytes(encryptedBytes);
   } catch (e) {
-    print("Worker error: $e");
+    debugPrint("Worker error: $e");
   }
 }
 
@@ -186,6 +234,78 @@ Future<void> _generateEncryptedThumbnailBytesWorker(
     // 3. Save
     await File(args.dest).writeAsBytes(encryptedBytes);
   } catch (e) {
-    print("Worker bytes error: $e");
+    debugPrint("Worker bytes error: $e");
+  }
+}
+
+Future<void> _generateFromEncryptedFileWorker(
+  _GenFromEncryptedFileArgs args,
+) async {
+  try {
+    final file = File(args.encryptedFilePath);
+    if (!file.existsSync()) return;
+
+    // 1. Decrypt entire file to memory
+    // Replicating VaultService logic but simplified for compute
+    // We assume GCM chunks of 1MB + overhead
+    const chunkSize = 1024 * 1024;
+    const overhead = 12 + 16;
+    const blockSize = chunkSize + overhead;
+
+    final algorithm = AesGcm.with256bits();
+    final fileKey = SecretKey(args.fileKeyBytes);
+
+    final openFile = await file.open();
+    final fileSize = await file.length();
+    final buffer = BytesBuilder(copy: false);
+
+    try {
+      int offset = 0;
+      while (offset < fileSize) {
+        // Read block
+        final block = await openFile.read(blockSize);
+        if (block.isEmpty) break;
+        offset += block.length;
+
+        if (block.length < overhead) {
+          if (block.length < 28) continue;
+        }
+
+        final secretBox = SecretBox.fromConcatenation(
+          block,
+          nonceLength: 12,
+          macLength: 16,
+        );
+        final clearText = await algorithm.decrypt(
+          secretBox,
+          secretKey: fileKey,
+        );
+        buffer.add(clearText);
+      }
+    } finally {
+      await openFile.close();
+    }
+
+    final decryptedBytes = buffer.takeBytes();
+    if (decryptedBytes.isEmpty) return;
+
+    // 2. Decode Image
+    final image = img.decodeImage(decryptedBytes);
+    if (image == null) return;
+
+    // 3. Resize
+    final resized = img.copyResize(image, width: 300);
+    final jpgBytes = img.encodeJpg(resized, quality: 70);
+
+    // 4. Encrypt Thumbnail with FOLDER KEY
+    final folderKey = SecretKey(args.folderKeyBytes);
+    final secretBox = await algorithm.encrypt(jpgBytes, secretKey: folderKey);
+
+    final encryptedBytes = secretBox.concatenation();
+
+    // 5. Save
+    await File(args.destPath).writeAsBytes(encryptedBytes);
+  } catch (e) {
+    debugPrint("Worker encrypted file error: $e");
   }
 }
