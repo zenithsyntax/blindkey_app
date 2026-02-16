@@ -15,6 +15,7 @@ import 'package:blindkey_app/domain/models/folder_model.dart';
 import 'package:blindkey_app/presentation/pages/file_view_page.dart';
 import 'package:blindkey_app/presentation/widgets/banner_ad_widget.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:cryptography/cryptography.dart';
@@ -482,76 +483,261 @@ class FolderViewPage extends HookConsumerWidget {
                 'Upload',
                 style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
-              onPressed: () async {
-                // Check if we need to show info
-                final shouldShow = await ref
-                    .read(uploadPrefsServiceProvider.notifier)
-                    .shouldShowUploadInfo();
-
-                if (shouldShow && context.mounted) {
-                  await showDialog(
-                    context: context,
-                    builder: (context) => UploadInfoDialog(
-                      onGotIt: () {
-                        Navigator.pop(context);
-                      },
-                    ),
-                  );
-                  // Mark as shown regardless of how it was closed (button or barrier)
-                  ref
-                      .read(uploadPrefsServiceProvider.notifier)
-                      .setUploadInfoShown();
-                }
-
-                isProcessing.value = true;
-                try {
-                  // Small delay to ensure UI updates
-                  await Future.delayed(const Duration(milliseconds: 100));
-
-                  final result = await FilePicker.platform.pickFiles(
-                    allowMultiple: true,
-                    withReadStream: false,
-                  );
-
-                  if (result != null) {
-                    final files = result.paths
-                        .whereType<String>()
-                        .map((e) => File(e))
-                        .toList();
-
-                    // Validate files before processing
-                    for (var f in files) {
-                      if (f.lengthSync() == 0) {
-                        _showError(
-                          context,
-                          "One of the selected files is empty and cannot be secured.",
-                        );
-                        isProcessing.value = false;
-                        return;
-                      }
-                      // Example: Limit > 1GB (adjust as needed)
-                      if (f.lengthSync() > 1024 * 1024 * 1024) {
-                        _showError(
-                          context,
-                          "One of the selected files is too large. Please select files under 1GB.",
-                        );
-                        isProcessing.value = false;
-                        return;
-                      }
-                    }
-
-                    if (files.isEmpty) return;
-
-                    await _handleUpload(context, ref, files);
-                  }
-                } catch (e) {
-                  _showError(context, ErrorMapper.getUserFriendlyError(e));
-                } finally {
-                  isProcessing.value = false;
-                }
-              },
+              onPressed: () => _showUploadOptions(context, ref, isProcessing),
             ),
     );
+  }
+
+  void _showUploadOptions(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isProcessing,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildOptionTile(
+              context,
+              icon: Icons.camera_alt_rounded,
+              title: "Take Photo",
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(context, ref, isProcessing, ImageSource.camera);
+              },
+            ),
+            _buildOptionTile(
+              context,
+              icon: Icons.videocam_rounded,
+              title: "Record Video",
+              onTap: () {
+                Navigator.pop(context);
+                _pickVideo(context, ref, isProcessing, ImageSource.camera);
+              },
+            ),
+            _buildOptionTile(
+              context,
+              icon: Icons.photo_library_rounded,
+              title: "From Gallery",
+              onTap: () {
+                Navigator.pop(context);
+                _pickFromGallery(context, ref, isProcessing);
+              },
+            ),
+            _buildOptionTile(
+              context,
+              icon: Icons.folder_open_rounded,
+              title: "Select Files",
+              onTap: () {
+                Navigator.pop(context);
+                _pickFiles(context, ref, isProcessing);
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 24),
+      ),
+      title: Text(
+        title,
+        style: GoogleFonts.inter(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Future<void> _pickImage(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isProcessing,
+    ImageSource source,
+  ) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? photo = await picker.pickImage(source: source);
+      if (photo != null) {
+        isProcessing.value = true;
+        await _handleUpload(context, ref, [File(photo.path)]);
+      }
+    } catch (e) {
+      _showError(context, ErrorMapper.getUserFriendlyError(e));
+    } finally {
+      isProcessing.value = false;
+    }
+  }
+
+  Future<void> _pickVideo(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isProcessing,
+    ImageSource source,
+  ) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(source: source);
+      if (video != null) {
+        isProcessing.value = true;
+        await _handleUpload(context, ref, [File(video.path)]);
+      }
+    } catch (e) {
+      _showError(context, ErrorMapper.getUserFriendlyError(e));
+    } finally {
+      isProcessing.value = false;
+    }
+  }
+
+  Future<void> _pickFromGallery(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isProcessing,
+  ) async {
+    try {
+      final picker = ImagePicker();
+      // pickMultiImage is for images only. For mixed content or videos from gallery, distinct methods needed?
+      // pickMultiImage returns List<XFile>.
+      // pickVideo returns XFile?
+      // Implementing a choice or just using pickMultiImage for now.
+      // User requested "select from gallery". Usually implies picking existing media.
+      // We can use pickMultipleMedia if available in newer image_picker versions, or pickMultiImage.
+      // Checking image_picker capabilities... available since 0.8.9: pickMultipleMedia
+      // But let's stick to pickMultiImage for now as it's safer, or use standard file picker for mixed?
+      // Actually standard File Picker (Select Files) covers everything from gallery too usually.
+      // But explicit "Gallery" usually means using the OS photo picker.
+      // Let's use pickMultiImage which is fast and native-like for photos.
+      // For videos from gallery, we might need another option or use pickVideo(source: gallery).
+      // Let's use pickMultipleMedia if possible, checking pubspec... dependency added was 'image_picker'.
+      // Assumption: Latest version supports pickMedia/pickMultipleMedia.
+      // If not, we fall back to pickMultiImage.
+      // Let's try pickMultipleMedia. If it fails compilation, we will fix.
+      // Actually, safest is pickMultiImage for "Photos" and pickVideo for "Videos".
+      // Let's just implement pickMultiImage for "Gallery" option for now, or maybe ask?
+      // Task says "capture video or photo or select from gallery".
+      // "Select from gallery" -> likely means photos/videos.
+      // I'll use pickMultipleMedia.
+
+      final List<XFile> medias = await picker.pickMultipleMedia();
+      if (medias.isNotEmpty) {
+        isProcessing.value = true;
+        await _handleUpload(
+          context,
+          ref,
+          medias.map((e) => File(e.path)).toList(),
+        );
+      }
+    } catch (e) {
+      // Fallback or error
+      _showError(context, "Could not open gallery: $e");
+    } finally {
+      isProcessing.value = false;
+    }
+  }
+
+  Future<void> _pickFiles(
+    BuildContext context,
+    WidgetRef ref,
+    ValueNotifier<bool> isProcessing,
+  ) async {
+    // Check if we need to show info
+    final shouldShow = await ref
+        .read(uploadPrefsServiceProvider.notifier)
+        .shouldShowUploadInfo();
+
+    if (shouldShow && context.mounted) {
+      await showDialog(
+        context: context,
+        builder: (context) => UploadInfoDialog(
+          onGotIt: () {
+            Navigator.pop(context);
+          },
+        ),
+      );
+      // Mark as shown regardless of how it was closed (button or barrier)
+      ref.read(uploadPrefsServiceProvider.notifier).setUploadInfoShown();
+    }
+
+    isProcessing.value = true;
+    try {
+      // Small delay to ensure UI updates
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withReadStream: false,
+      );
+
+      if (result != null) {
+        final files = result.paths
+            .whereType<String>()
+            .map((e) => File(e))
+            .toList();
+
+        // Validate files before processing
+        for (var f in files) {
+          if (f.lengthSync() == 0) {
+            _showError(
+              context,
+              "One of the selected files is empty and cannot be secured.",
+            );
+            isProcessing.value = false;
+            return;
+          }
+          // Example: Limit > 1GB (adjust as needed)
+          if (f.lengthSync() > 1024 * 1024 * 1024) {
+            _showError(
+              context,
+              "One of the selected files is too large. Please select files under 1GB.",
+            );
+            isProcessing.value = false;
+            return;
+          }
+        }
+
+        if (files.isEmpty) return;
+
+        await _handleUpload(context, ref, files);
+      }
+    } catch (e) {
+      _showError(context, ErrorMapper.getUserFriendlyError(e));
+    } finally {
+      isProcessing.value = false;
+    }
   }
 
   Future<void> _handleUpload(

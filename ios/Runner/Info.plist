@@ -49,6 +49,12 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>BlindKey needs access to your camera to take photos and videos for secure storage.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>BlindKey needs access to your microphone to record videos for secure storage.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BlindKey needs access to your photo library to select photos and videos for secure storage.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
