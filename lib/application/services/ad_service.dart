@@ -1,13 +1,55 @@
+import 'dart:io';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class AdService {
   // Ad Unit IDs
-  static const String appId = 'ca-app-pub-3265595931244532~3006982142';
-  static const String homeBannerAdId = 'ca-app-pub-3265595931244532/4820415823';
-  static const String folderViewBannerAdId = 'ca-app-pub-3265595931244532/8568089149';
-  static const String fileViewBannerAdId = 'ca-app-pub-3265595931244532/1418568307';
-  static const String importFileInterstitialAdId = 'ca-app-pub-3265595931244532/6061345304';
-  static const String importBlindKeyInterstitialAdId = 'ca-app-pub-3265595931244532/6136542513';
+  static String get appId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532~3105979096';
+    } else {
+      return 'ca-app-pub-3265595931244532~3006982142';
+    }
+  }
+
+  static String get homeBannerAdId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532/3578963258';
+    } else {
+      return 'ca-app-pub-3265595931244532/4820415823';
+    }
+  }
+
+  static String get folderViewBannerAdId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532/7971727733';
+    } else {
+      return 'ca-app-pub-3265595931244532/8568089149';
+    }
+  }
+
+  static String get fileViewBannerAdId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532/2179910238';
+    } else {
+      return 'ca-app-pub-3265595931244532/1418568307';
+    }
+  }
+
+  static String get importFileInterstitialAdId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532/9915364790';
+    } else {
+      return 'ca-app-pub-3265595931244532/6061345304';
+    }
+  }
+
+  static String get importBlindKeyInterstitialAdId {
+    if (Platform.isIOS) {
+      return 'ca-app-pub-3265595931244532/3430789444';
+    } else {
+      return 'ca-app-pub-3265595931244532/6136542513';
+    }
+  }
 
   // Interstitial ad instances
   InterstitialAd? _importFileInterstitialAd;
@@ -25,21 +67,22 @@ class AdService {
         onAdLoaded: (ad) {
           _importFileInterstitialAd = ad;
           _isImportFileAdReady = true;
-          _importFileInterstitialAd?.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _importFileInterstitialAd = null;
-              _isImportFileAdReady = false;
-              // Preload next ad
-              loadImportFileInterstitialAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              ad.dispose();
-              _importFileInterstitialAd = null;
-              _isImportFileAdReady = false;
-              loadImportFileInterstitialAd();
-            },
-          );
+          _importFileInterstitialAd?.fullScreenContentCallback =
+              FullScreenContentCallback(
+                onAdDismissedFullScreenContent: (ad) {
+                  ad.dispose();
+                  _importFileInterstitialAd = null;
+                  _isImportFileAdReady = false;
+                  // Preload next ad
+                  loadImportFileInterstitialAd();
+                },
+                onAdFailedToShowFullScreenContent: (ad, error) {
+                  ad.dispose();
+                  _importFileInterstitialAd = null;
+                  _isImportFileAdReady = false;
+                  loadImportFileInterstitialAd();
+                },
+              );
         },
         onAdFailedToLoad: (error) {
           _isImportFileAdReady = false;
@@ -61,21 +104,22 @@ class AdService {
         onAdLoaded: (ad) {
           _importBlindKeyInterstitialAd = ad;
           _isImportBlindKeyAdReady = true;
-          _importBlindKeyInterstitialAd?.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _importBlindKeyInterstitialAd = null;
-              _isImportBlindKeyAdReady = false;
-              // Preload next ad
-              loadImportBlindKeyInterstitialAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              ad.dispose();
-              _importBlindKeyInterstitialAd = null;
-              _isImportBlindKeyAdReady = false;
-              loadImportBlindKeyInterstitialAd();
-            },
-          );
+          _importBlindKeyInterstitialAd?.fullScreenContentCallback =
+              FullScreenContentCallback(
+                onAdDismissedFullScreenContent: (ad) {
+                  ad.dispose();
+                  _importBlindKeyInterstitialAd = null;
+                  _isImportBlindKeyAdReady = false;
+                  // Preload next ad
+                  loadImportBlindKeyInterstitialAd();
+                },
+                onAdFailedToShowFullScreenContent: (ad, error) {
+                  ad.dispose();
+                  _importBlindKeyInterstitialAd = null;
+                  _isImportBlindKeyAdReady = false;
+                  loadImportBlindKeyInterstitialAd();
+                },
+              );
         },
         onAdFailedToLoad: (error) {
           _isImportBlindKeyAdReady = false;
@@ -124,4 +168,3 @@ class AdService {
     _isImportBlindKeyAdReady = false;
   }
 }
-
