@@ -55,6 +55,8 @@
 	<string>BlindKey needs access to your microphone to record videos for secure storage.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>BlindKey needs access to your photo library to select photos and videos for secure storage.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
