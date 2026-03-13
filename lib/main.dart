@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:screen_protector/screen_protector.dart';
 import 'package:safe_device/safe_device.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 
 void main() async {
@@ -96,7 +97,13 @@ class BlindKeyApp extends HookConsumerWidget {
     // We could make a dedicated SecurityNotifier but inline is faster for now.
     final securityCheck = useFuture(
       useMemoized(() async {
+        // Bypass security check in debug mode or on simulators
+        if (kDebugMode) return false;
+
         if (Platform.isAndroid || Platform.isIOS) {
+          final isRealDevice = await SafeDevice.isRealDevice;
+          if (!isRealDevice) return false;
+
           return await SafeDevice.isJailBroken;
         }
         return false;
