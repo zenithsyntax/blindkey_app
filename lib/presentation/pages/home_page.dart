@@ -1340,7 +1340,7 @@ Future<void> _showImportPasswordDialog(
                                 try {
                                   // Show interstitial ad before importing
                                   final adService = ref.read(adServiceProvider);
-                                  adService.showImportBlindKeyInterstitialAd();
+                                  await adService.showImportBlindKeyInterstitialAd();
 
                                   await ref
                                       .read(folderNotifierProvider.notifier)

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -133,22 +134,60 @@ class AdService {
   }
 
   // Show import file interstitial ad
-  void showImportFileInterstitialAd() {
+  Future<void> showImportFileInterstitialAd() async {
     if (_isImportFileAdReady && _importFileInterstitialAd != null) {
-      _importFileInterstitialAd!.show();
+      final completer = Completer<void>();
+      
+      final previousCallback = _importFileInterstitialAd!.fullScreenContentCallback;
+      _importFileInterstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          previousCallback?.onAdDismissedFullScreenContent?.call(ad);
+          if (!completer.isCompleted) completer.complete();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          previousCallback?.onAdFailedToShowFullScreenContent?.call(ad, error);
+          if (!completer.isCompleted) completer.complete();
+        },
+        onAdShowedFullScreenContent: previousCallback?.onAdShowedFullScreenContent,
+        onAdImpression: previousCallback?.onAdImpression,
+        onAdClicked: previousCallback?.onAdClicked,
+      );
+
+      await _importFileInterstitialAd!.show();
+      return completer.future;
     } else {
       // If ad not ready, try to load and show later
       loadImportFileInterstitialAd();
+      return; // Return immediately if no ad
     }
   }
 
   // Show import blind key interstitial ad
-  void showImportBlindKeyInterstitialAd() {
+  Future<void> showImportBlindKeyInterstitialAd() async {
     if (_isImportBlindKeyAdReady && _importBlindKeyInterstitialAd != null) {
-      _importBlindKeyInterstitialAd!.show();
+      final completer = Completer<void>();
+
+      final previousCallback = _importBlindKeyInterstitialAd!.fullScreenContentCallback;
+      _importBlindKeyInterstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          previousCallback?.onAdDismissedFullScreenContent?.call(ad);
+          if (!completer.isCompleted) completer.complete();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          previousCallback?.onAdFailedToShowFullScreenContent?.call(ad, error);
+          if (!completer.isCompleted) completer.complete();
+        },
+        onAdShowedFullScreenContent: previousCallback?.onAdShowedFullScreenContent,
+        onAdImpression: previousCallback?.onAdImpression,
+        onAdClicked: previousCallback?.onAdClicked,
+      );
+
+      await _importBlindKeyInterstitialAd!.show();
+      return completer.future;
     } else {
       // If ad not ready, try to load and show later
       loadImportBlindKeyInterstitialAd();
+      return; // Return immediately if no ad
     }
   }
 

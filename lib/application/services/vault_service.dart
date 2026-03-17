@@ -727,85 +727,66 @@ class VaultService {
         }
       }
 
-      final map = result.manifest!;
-      final salt = result.salt!;
-      final key = SecretKey(result.keyBytes!);
-
-      // 3. Import Folder (DB operation must be on main thread)
-      final newFolderId = const Uuid().v4();
-      final folder = FolderModel(
-        id: newFolderId,
-        name: map['name'] + " (Imported)",
-        salt: base64Encode(salt),
-        verificationHash: map['verificationHash'],
-        createdAt: trustedNow,
-        allowSave: map['allowSave'] ?? true,
-      );
-
-      await _folderRepository.saveFolder(folder);
-
-      // 4. Import Files
-      final filesList = (map['files'] as List)
-          .map((e) => FileMetadata.fromJson(e))
-          .toList();
-
+      // 4. Start extraction in the same isolate (already open)
+      // To keep it clean, we'll send a message to the isolate to continue with extraction
+      // or just wait for the whole thing to finish in the isolate. 
+      // Actually, _isolateImportVerifyEntry only verified. Let's make a new one for full import
+      // or just update it to do everything. Let's update it to do EVERYTHING to save spawning costs.
+      
       final vaultPathRes = await _storageService.createEncryptedFileDir();
       final vaultPath = vaultPathRes.getOrElse(() => '');
 
-      // Re-open archive in isolate or here? 
-      // Since we already verified, we can do the heavy extraction here OR in another isolate.
-      // To keep it simple and responsive, let's do the extraction in the main thread for now, 
-      // as it's mostly I/O bound and we already passed the "wait time for error" bottleneck.
-      // However, to be fully optimized, we should stream extraction too.
-      
-      // We need the archive again.
-      final inputStream = InputFileStream(path);
-      inputStream.skip(32); // Skip salt
-      final archive = ZipDecoder().decodeBuffer(inputStream);
+      final extractionPort = ReceivePort();
+      await Isolate.spawn(
+        _isolateImportFullEntry,
+        _IsolateImportFullArgs(
+          sendPort: extractionPort.sendPort,
+          filePath: path,
+          password: password,
+          trustedNowIso: trustedNow.toIso8601String(),
+          keyBytes: derivedKeyBytes,
+          salt: derivedSalt,
+          vaultPath: vaultPath,
+        ),
+      );
 
-      for (final meta in filesList) {
-        if (meta.expiryDate != null &&
-            trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
-          continue;
-        }
+      await for (final message in extractionPort) {
+        if (message is _IsolateImportFullResult) {
+          if (message.status != ImportResultStatus.success) {
+            if (message.status == ImportResultStatus.invalidPassword) {
+              return left(const Failure.invalidPassword());
+            } else if (message.status == ImportResultStatus.expired) {
+              return left(const Failure.fileExpired());
+            } else {
+              return left(Failure.unexpected(message.errorMessage ?? "Unknown error"));
+            }
+          }
 
-        final zipFile = archive.findFile(meta.encryptedFilePath);
-        if (zipFile != null) {
-          final newFileId = const Uuid().v4();
-          final newPath = '$vaultPath/$newFileId.enc';
-
-          // EFFICIENT WRITE: Stream from ZIP to Disk
-          final outputStream = OutputFileStream(newPath);
-          zipFile.writeContent(outputStream);
-          await outputStream.close();
-
-          // Update Metadata
-          final newMeta = meta.copyWith(
-            id: newFileId,
-            encryptedFilePath: newPath,
+          // DB Operation must be on main thread
+          final map = message.manifest!;
+          final newFolderId = const Uuid().v4();
+          final folder = FolderModel(
+            id: newFolderId,
+            name: map['name'] + " (Imported)",
+            salt: base64Encode(message.salt!),
+            verificationHash: map['verificationHash'],
+            createdAt: trustedNow,
+            allowSave: map['allowSave'] ?? true,
           );
 
-          final metaJson = jsonEncode(newMeta.toJson());
-          final encMetaRes = await _cryptoService.encryptData(
-            data: utf8.encode(metaJson),
-            key: key,
-          );
-          final encMeta = encMetaRes.getOrElse(() => []);
+          await _folderRepository.saveFolder(folder);
 
-          final fileModel = FileModel(
-            id: newFileId,
-            folderId: newFolderId,
-            encryptedMetadata: base64Encode(encMeta),
-            encryptedPreviewPath: "",
-            expiryDate: meta.expiryDate,
-          );
+          // Save file models
+          for (final fileModel in message.fileModels!) {
+            final updatedFileModel = fileModel.copyWith(folderId: newFolderId);
+            await _fileRepository.saveFileModel(updatedFileModel);
+          }
 
-          await _fileRepository.saveFileModel(fileModel);
+          return right(unit);
         }
       }
 
-      await inputStream.close();
-      return right(unit);
+      return left(const Failure.unexpected("Import failed to complete"));
     } catch (e) {
       if (e.toString().contains("Internet") ||
           e.toString().contains("SocketException")) {
@@ -1021,6 +1002,161 @@ class VaultService {
     }
   }
 } // Properly closing VaultService
+
+class _IsolateImportFullArgs {
+  final SendPort sendPort;
+  final String filePath;
+  final String password;
+  final String trustedNowIso;
+  final List<int> keyBytes;
+  final List<int> salt;
+  final String vaultPath;
+
+  _IsolateImportFullArgs({
+    required this.sendPort,
+    required this.filePath,
+    required this.password,
+    required this.trustedNowIso,
+    required this.keyBytes,
+    required this.salt,
+    required this.vaultPath,
+  });
+}
+
+class _IsolateImportFullResult {
+  final ImportResultStatus status;
+  final String? errorMessage;
+  final Map<String, dynamic>? manifest;
+  final List<int>? salt;
+  final List<int>? keyBytes;
+  final List<FileModel>? fileModels;
+
+  _IsolateImportFullResult({
+    required this.status,
+    this.errorMessage,
+    this.manifest,
+    this.salt,
+    this.keyBytes,
+    this.fileModels,
+  });
+}
+
+Future<void> _isolateImportFullEntry(_IsolateImportFullArgs args) async {
+  try {
+    final salt = args.salt;
+    final keyBytes = args.keyBytes;
+    final secretKey = SecretKey(keyBytes);
+    final trustedNow = DateTime.parse(args.trustedNowIso);
+
+    final rawStream = InputFileStream(args.filePath);
+    final inputStream = InputFileStream.clone(rawStream, position: 32);
+
+    final archive = ZipDecoder().decodeBuffer(inputStream);
+
+    // 1. Decrypt Manifest
+    final manifestFile = archive.findFile('manifest.enc');
+    if (manifestFile == null) {
+      await inputStream.close();
+      args.sendPort.send(_IsolateImportFullResult(
+        status: ImportResultStatus.error,
+        errorMessage: "Invalid blindkey file structure",
+      ));
+      return;
+    }
+
+    final encManifest = manifestFile.content as List<int>;
+    final algorithm = AesGcm.with256bits();
+    
+    Map<String, dynamic> manifest;
+    try {
+      final secretBox = SecretBox.fromConcatenation(
+        encManifest,
+        nonceLength: algorithm.nonceLength,
+        macLength: algorithm.macAlgorithm.macLength,
+      );
+      final clearBytes = await algorithm.decrypt(secretBox, secretKey: secretKey);
+      final jsonStr = utf8.decode(clearBytes);
+      manifest = jsonDecode(jsonStr);
+    } catch (e) {
+      await inputStream.close();
+      args.sendPort.send(_IsolateImportFullResult(status: ImportResultStatus.invalidPassword));
+      return;
+    }
+
+    // 2. Check Expiry
+    if (manifest.containsKey('expiryDate') && manifest['expiryDate'] != null) {
+      final expiryIso = manifest['expiryDate'] as String;
+      final expiryDate = DateTime.tryParse(expiryIso);
+      if (expiryDate != null && trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
+        await inputStream.close();
+        args.sendPort.send(_IsolateImportFullResult(status: ImportResultStatus.expired));
+        return;
+      }
+    }
+
+    // 3. Extract Files
+    final filesList = (manifest['files'] as List)
+        .map((e) => FileMetadata.fromJson(e))
+        .toList();
+
+    final fileModels = <FileModel>[];
+
+    for (final meta in filesList) {
+      if (meta.expiryDate != null &&
+          trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
+        continue;
+      }
+
+      final zipFile = archive.findFile(meta.encryptedFilePath);
+      if (zipFile != null) {
+        final newFileId = const Uuid().v4();
+        final newPath = '${args.vaultPath}/$newFileId.enc';
+
+        // EFFICIENT WRITE
+        final outputStream = OutputFileStream(newPath);
+        zipFile.writeContent(outputStream);
+        await outputStream.close();
+
+        // Update Metadata
+        final newMeta = meta.copyWith(
+          id: newFileId,
+          encryptedFilePath: newPath,
+        );
+
+        final metaJson = jsonEncode(newMeta.toJson());
+        
+        // Use synchronous-style encryption in isolate (cryptography is async but we await it)
+        final metaSecretBox = await algorithm.encrypt(
+          utf8.encode(metaJson),
+          secretKey: secretKey,
+        );
+        final encMeta = metaSecretBox.concatenation();
+
+        fileModels.add(FileModel(
+          id: newFileId,
+          folderId: "", // Will be set on main thread
+          encryptedMetadata: base64Encode(encMeta),
+          encryptedPreviewPath: "",
+          expiryDate: meta.expiryDate,
+        ));
+      }
+    }
+
+    await inputStream.close();
+    args.sendPort.send(_IsolateImportFullResult(
+      status: ImportResultStatus.success,
+      manifest: manifest,
+      salt: salt,
+      keyBytes: keyBytes,
+      fileModels: fileModels,
+    ));
+  } catch (e) {
+    args.sendPort.send(_IsolateImportFullResult(
+      status: ImportResultStatus.error,
+      errorMessage: e.toString(),
+    ));
+  }
+}
 
 class _IsolateBulkEncryptionItem {
   final int index;
