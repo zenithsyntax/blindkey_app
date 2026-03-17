@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
@@ -415,6 +416,33 @@ class VaultService {
       final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
       yield clearText;
     }
+  }
+
+  /// Decrypts the entire file in a background isolate and returns the full bytes.
+  /// Ideal for small to medium files (like most images) to prevent UI jank.
+  Future<Uint8List> decryptFileCompute({
+    required FileModel file,
+    required SecretKey folderKey,
+  }) async {
+    // 1. Decrypt Metadata to get File Key and File Path
+    final encMetadataBytes = base64Decode(file.encryptedMetadata);
+    final metadataResult = await _cryptoService.decryptData(
+      encryptedData: encMetadataBytes,
+      key: folderKey,
+    );
+
+    if (metadataResult.isLeft()) throw Exception("Failed to decrypt metadata");
+    final metadataJson = utf8.decode(metadataResult.getOrElse(() => []));
+    final metadata = FileMetadata.fromJson(jsonDecode(metadataJson));
+
+    final dekBytes = base64Decode(metadata.fileKey);
+
+    return await Isolate.run(() => _backgroundDecryption(
+          _IsolateDecryptionArgs(
+            encryptedPath: metadata.encryptedFilePath,
+            dekBytes: dekBytes,
+          ),
+        ));
   }
 
   Stream<List<int>> decryptFileRange({
@@ -1385,4 +1413,52 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
       await stagingDir.delete(recursive: true);
     }
   }
+}
+
+class _IsolateDecryptionArgs {
+  final String encryptedPath;
+  final List<int> dekBytes;
+  _IsolateDecryptionArgs({required this.encryptedPath, required this.dekBytes});
+}
+
+Future<Uint8List> _backgroundDecryption(_IsolateDecryptionArgs args) async {
+  final file = File(args.encryptedPath);
+  if (!file.existsSync()) throw Exception("File not found");
+
+  final algorithm = AesGcm.with256bits();
+  final dek = SecretKey(args.dekBytes);
+  final blockSize = 12 + (1024 * 1024) + 16;
+  final builder = BytesBuilder();
+
+  final stream = file.openRead();
+  List<int> buffer = [];
+
+  await for (final chunk in stream) {
+    buffer.addAll(chunk);
+    while (buffer.length >= blockSize) {
+      final block = buffer.sublist(0, blockSize);
+      buffer = buffer.sublist(blockSize);
+
+      final secretBox = SecretBox.fromConcatenation(
+        block,
+        nonceLength: 12,
+        macLength: 16,
+      );
+
+      final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
+      builder.add(clearText);
+    }
+  }
+
+  if (buffer.isNotEmpty) {
+    final secretBox = SecretBox.fromConcatenation(
+      buffer,
+      nonceLength: 12,
+      macLength: 16,
+    );
+    final clearText = await algorithm.decrypt(secretBox, secretKey: dek);
+    builder.add(clearText);
+  }
+
+  return builder.takeBytes();
 }

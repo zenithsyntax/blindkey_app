@@ -33,30 +33,42 @@ class FileViewPage extends HookConsumerWidget {
   final FileModel file;
   final SecretKey folderKey;
   final bool allowSave; // Permission check
+  final List<FileModel> allImageFiles;
+  final int initialIndex;
 
   const FileViewPage({
     super.key,
     required this.file,
     required this.folderKey,
     this.allowSave = true,
+    this.allImageFiles = const [],
+    this.initialIndex = 0,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pageController = usePageController(initialPage: initialIndex);
+    final currentPageIndex = useState(initialIndex);
+    // Track rotation turns per file ID
+    final rotationStates = useState<Map<String, int>>({});
+
+    final currentFile = allImageFiles.isNotEmpty 
+        ? allImageFiles[currentPageIndex.value] 
+        : file;
+    final currentRotation = rotationStates.value[currentFile.id] ?? 0;
+
     // 1. Preload Trusted Time if file has expiry
     final trustedTimeFuture = useMemoized(() async {
-      if (file.expiryDate != null) {
+      if (currentFile.expiryDate != null) {
         // Enforce Internet Check
         try {
           return await ref.read(trustedTimeServiceProvider).getTrustedTime();
         } catch (e) {
-          // Let the error mapper handle the message presentation later
-          // But we need to propagate it
           throw Exception(ErrorMapper.getUserFriendlyError(e));
         }
       }
       return null;
-    }, [file.id]); // Keyed by ID
+    }, [currentFile.id]); // Keyed by current file ID
 
     final trustedTimeSnapshot = useFuture(trustedTimeFuture);
 
@@ -65,7 +77,7 @@ class FileViewPage extends HookConsumerWidget {
       () async {
         // Wait for time check if needed
         DateTime? trustedNow;
-        if (file.expiryDate != null) {
+        if (currentFile.expiryDate != null) {
           if (trustedTimeSnapshot.hasError) throw trustedTimeSnapshot.error!;
           if (!trustedTimeSnapshot.hasData) return null; // Wait...
           trustedNow = trustedTimeSnapshot.data;
@@ -73,7 +85,7 @@ class FileViewPage extends HookConsumerWidget {
 
         final vault = ref.read(vaultServiceProvider);
         final res = await vault.decryptMetadata(
-          file: file,
+          file: currentFile,
           folderKey: folderKey,
           trustedNow: trustedNow,
         );
@@ -168,22 +180,20 @@ class FileViewPage extends HookConsumerWidget {
           return meta;
         });
       },
-      [file.id, trustedTimeSnapshot.data, trustedTimeSnapshot.error],
+      [currentFile.id, trustedTimeSnapshot.data, trustedTimeSnapshot.error],
     ); // Re-run when time is ready
 
     final fileDetails = useFuture(fileDetailsFuture);
 
     // Loading State handling (Time check OR Decrypt)
-    if (file.expiryDate != null &&
+    if (currentFile.expiryDate != null &&
         trustedTimeSnapshot.connectionState == ConnectionState.waiting) {
       // Showing loading for verification
     }
 
-    final isVideo =
-        fileDetails.hasData && (fileDetails.data!.mimeType.startsWith('video'));
     final isImage =
         fileDetails.hasData &&
-        (fileDetails.data!.mimeType.startsWith('image/'));
+        (fileDetails.data!.mimeType.toLowerCase().startsWith('image/'));
 
     // Track if ad is loaded for conditional padding
     final isAdLoaded = useState<bool>(false);
@@ -192,6 +202,30 @@ class FileViewPage extends HookConsumerWidget {
     // Start with UI hidden (fullscreen mode)
     final showSystemUI = useState<bool>(false);
     final isSaving = useState(false);
+
+    // 4. Proactive Pre-loading logic
+    useEffect(() {
+      if (allImageFiles.isEmpty) return null;
+
+      void preloadAdjacent(int index) async {
+        final indices = [index - 1, index + 1];
+        for (final i in indices) {
+          if (i >= 0 && i < allImageFiles.length) {
+            final f = allImageFiles[i];
+            _ImageView.preload(
+              ref: ref,
+              file: f,
+              folderKey: folderKey,
+              trustedNow: trustedTimeSnapshot.data,
+              context: context,
+            );
+          }
+        }
+      }
+
+      preloadAdjacent(currentPageIndex.value);
+      return null;
+    }, [currentPageIndex.value, allImageFiles.length]);
 
     // Hide/show system UI based on state
     useEffect(() {
@@ -254,129 +288,7 @@ class FileViewPage extends HookConsumerWidget {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F), // Deep matte black
       extendBodyBehindAppBar: true,
-      appBar: (isVideo || isImage)
-          ? null
-          : AppBar(
-              centerTitle: true,
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white70,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                fileDetails.data?.fileName ?? 'File Viewer',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  letterSpacing: -0.2,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              actions: [
-                if (allowSave) // Only if permitted
-                  if (isSaving.value)
-                    const Padding(
-                      padding: EdgeInsets.all(12.0),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(
-                        Icons.open_in_new_rounded,
-                        color: Colors.white70,
-                      ),
-                      tooltip: 'Open in External App',
-                      onPressed: () async {
-                        if (!fileDetails.hasData) return;
-
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                            child: AlertDialog(
-                              backgroundColor: const Color(0xFF1A1A1A),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                                side: BorderSide(
-                                  color: Colors.white.withOpacity(0.08),
-                                ),
-                              ),
-                              title: Text(
-                                "Leave Secure Vault?",
-                                style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              content: Text(
-                                'You are about to open this file externally.\n\n'
-                                '• Screenshot protection will be LOST.\n'
-                                '• The file will be decrypted temporarily.\n\n'
-                                'Proceed?',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: Text(
-                                    'Cancel',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: Text(
-                                    'Open Externally',
-                                    style: GoogleFonts.inter(
-                                      color: Colors.redAccent,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-
-                        if (confirm != true) return;
-
-                        isSaving.value = true;
-                        try {
-                          await openExternally(
-                            context,
-                            ref,
-                            file,
-                            folderKey,
-                            fileDetails.data!.fileName,
-                          );
-                        } finally {
-                          isSaving.value = false;
-                        }
-                      },
-                    ),
-              ],
-            ),
+      appBar: null,
       body: OrientationBuilder(
         builder: (context, orientation) {
           final isLandscape = orientation == Orientation.landscape;
@@ -440,13 +352,9 @@ class FileViewPage extends HookConsumerWidget {
             child: Stack(
               children: [
                 // Background
+                // 1. Content Layer
                 Positioned.fill(
-                  child: Container(color: const Color(0xFF0F0F0F)),
-                ),
-
-                SafeArea(
                   child: Padding(
-                    // Add right padding in landscape only if ad is loaded
                     padding: EdgeInsets.only(
                       right: (isLandscape && isAdLoaded.value) ? adWidth : 0.0,
                     ),
@@ -455,12 +363,8 @@ class FileViewPage extends HookConsumerWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(20.0),
                               child: AutoSizeText(
-                                ErrorMapper.getUserFriendlyError(
-                                  fileDetails.error!,
-                                ),
-                                style: GoogleFonts.inter(
-                                  color: Colors.red.shade300,
-                                ),
+                                ErrorMapper.getUserFriendlyError(fileDetails.error!),
+                                style: GoogleFonts.inter(color: Colors.red.shade300),
                                 textAlign: TextAlign.center,
                                 maxLines: 5,
                                 minFontSize: 12,
@@ -468,139 +372,173 @@ class FileViewPage extends HookConsumerWidget {
                             ),
                           )
                         : !fileDetails.hasData
-                        ? Center(
-                            child: SizedBox(
-                              width: 200,
-                              child: LinearProgressIndicator(
-                                color: Colors.white30,
-                                backgroundColor: Colors.white10,
-                              ),
-                            ),
-                          )
-                        : Material(
-                            type: MaterialType.transparency,
-                            child: isVideo
-                                ? _VideoView(
-                                    file: file,
-                                    folderKey: folderKey,
-                                    fileSize: fileDetails.data!.size,
-                                    trustedNow: trustedTimeSnapshot.data,
-                                    isAdLoaded: isAdLoaded.value,
-                                    allowSave: allowSave,
-                                  )
-                                : (fileDetails.data!.mimeType.startsWith(
-                                        'image/svg',
+                            ? Center(
+                                child: SizedBox(
+                                  width: 200,
+                                  child: LinearProgressIndicator(
+                                    color: Colors.white30,
+                                    backgroundColor: Colors.white10,
+                                  ),
+                                ),
+                              )
+                            : Material(
+                                type: MaterialType.transparency,
+                                child: allImageFiles.isNotEmpty
+                                    ? PageView.builder(
+                                        controller: pageController,
+                                        itemCount: allImageFiles.length,
+                                        allowImplicitScrolling: true,
+                                        onPageChanged: (index) {
+                                          currentPageIndex.value = index;
+                                        },
+                                        itemBuilder: (context, index) {
+                                          final currentFile = allImageFiles[index];
+                                          return _FileContentView(
+                                            key: ValueKey(currentFile.id),
+                                            file: currentFile,
+                                            folderKey: folderKey,
+                                            allowSave: allowSave,
+                                            trustedTimeSnapshot: trustedTimeSnapshot,
+                                            isAdLoaded: isAdLoaded.value,
+                                            rotationTurns: rotationStates.value[currentFile.id] ?? 0,
+                                            isActive: index == currentPageIndex.value,
+                                            onControlsToggle: () {
+                                              showSystemUI.value = !showSystemUI.value;
+                                            },
+                                          );
+                                        },
                                       )
-                                      ? _SvgView(
-                                          file: file,
-                                          folderKey: folderKey,
-                                          fileSize: fileDetails.data!.size,
-                                          trustedNow: trustedTimeSnapshot.data,
-                                        )
-                                      : (fileDetails.data!.mimeType.startsWith(
-                                              'image/',
-                                            )
-                                            ? _ImageView(
-                                                file: file,
-                                                folderKey: folderKey,
-                                                fileSize:
-                                                    fileDetails.data!.size,
-                                                trustedNow:
-                                                    trustedTimeSnapshot.data,
-                                                allowSave: allowSave,
-                                              )
-                                            : (fileDetails.data!.mimeType
-                                                      .startsWith('text/')
-                                                  ? _TextView(
-                                                      file: file,
-                                                      folderKey: folderKey,
-                                                      fileSize: fileDetails
-                                                          .data!
-                                                          .size,
-                                                      trustedNow:
-                                                          trustedTimeSnapshot
-                                                              .data,
-                                                    )
-                                                  : (fileDetails.data!.mimeType ==
-                                                            'application/pdf'
-                                                        ? _PdfView(
-                                                            file: file,
-                                                            folderKey:
-                                                                folderKey,
-                                                            fileSize:
-                                                                fileDetails
-                                                                    .data!
-                                                                    .size,
-                                                            trustedNow:
-                                                                trustedTimeSnapshot
-                                                                    .data,
-                                                          )
-                                                        : (fileDetails
-                                                                      .data!
-                                                                      .mimeType
-                                                                      .contains(
-                                                                        'excel',
-                                                                      ) ||
-                                                                  fileDetails
-                                                                      .data!
-                                                                      .mimeType
-                                                                      .contains(
-                                                                        'spreadsheet',
-                                                                      )
-                                                              ? _ExcelView(
-                                                                  file: file,
-                                                                  folderKey:
-                                                                      folderKey,
-                                                                  fileSize:
-                                                                      fileDetails
-                                                                          .data!
-                                                                          .size,
-                                                                  trustedNow:
-                                                                      trustedTimeSnapshot
-                                                                          .data,
-                                                                )
-                                                              : (fileDetails.data!.mimeType.contains(
-                                                                          'word',
-                                                                        ) ||
-                                                                        fileDetails
-                                                                            .data!
-                                                                            .mimeType
-                                                                            .contains('document')
-                                                                    ? _UnsupportedFileView(
-                                                                        file:
-                                                                            file,
-                                                                        folderKey:
-                                                                            folderKey,
-                                                                        fileName: fileDetails
-                                                                            .data!
-                                                                            .fileName,
-                                                                        allowSave:
-                                                                            allowSave,
-                                                                      )
-                                                                    : (fileDetails.data!.mimeType.contains('presentation') ||
-                                                                              fileDetails.data!.mimeType.contains('powerpoint')
-                                                                          ? _UnsupportedFileView(
-                                                                              file: file,
-                                                                              folderKey: folderKey,
-                                                                              fileName: fileDetails.data!.fileName,
-                                                                              allowSave: allowSave,
-                                                                            )
-                                                                          : (fileDetails.data!.mimeType.startsWith('audio/')
-                                                                                ? _AudioView(
-                                                                                    file: file,
-                                                                                    folderKey: folderKey,
-                                                                                    fileSize: fileDetails.data!.size,
-                                                                                    trustedNow: trustedTimeSnapshot.data,
-                                                                                  )
-                                                                                : _UnsupportedFileView(
-                                                                                    file: file,
-                                                                                    folderKey: folderKey,
-                                                                                    fileName: fileDetails.data!.fileName,
-                                                                                    allowSave: allowSave,
-                                                                                  ))))))))),
-                          ),
+                                    : _FileContentView(
+                                        file: file,
+                                        folderKey: folderKey,
+                                        allowSave: allowSave,
+                                        trustedTimeSnapshot: trustedTimeSnapshot,
+                                        isAdLoaded: isAdLoaded.value,
+                                        rotationTurns: currentRotation,
+                                        isActive: true,
+                                        onControlsToggle: () {
+                                          showSystemUI.value = !showSystemUI.value;
+                                        },
+                                      ),
+                              ),
                   ),
                 ),
+
+                // 2. Fixed UI Layer - Top Bar (Header)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  top: showSystemUI.value ? 0 : -100,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top,
+                      bottom: 10,
+                      left: 10,
+                      right: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.7),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Expanded(
+                          child: Text(
+                            fileDetails.data?.fileName ?? '',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (allowSave)
+                          if (isSaving.value)
+                            const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            )
+                          else
+                            IconButton(
+                              icon: const Icon(
+                                Icons.open_in_new_rounded,
+                                color: Colors.white,
+                              ),
+                              tooltip: 'Open Externally',
+                              onPressed: () async {
+                                if (!fileDetails.hasData) return;
+                                isSaving.value = true;
+                                try {
+                                  await openExternally(
+                                    context,
+                                    ref,
+                                    allImageFiles.isNotEmpty ? allImageFiles[currentPageIndex.value] : file,
+                                    folderKey,
+                                    fileDetails.data!.fileName,
+                                  );
+                                } finally {
+                                  isSaving.value = false;
+                                }
+                              },
+                            ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 3. Fixed UI Layer - Floating Rotation Controls
+                if (isImage)
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    bottom: showSystemUI.value ? (isLandscape ? 20 : 30 + (isAdLoaded.value ? 50 : 0)) : -100,
+                    right: 30,
+                    child: FloatingActionButton(
+                      mini: true,
+                      backgroundColor: Colors.white12,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.white24),
+                      ),
+                      onPressed: () {
+                        final newRotation = (currentRotation + 1) % 4;
+                        rotationStates.value = {
+                          ...rotationStates.value,
+                          currentFile.id: newRotation,
+                        };
+                      },
+                      child: const Icon(
+                        Icons.rotate_right_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
 
                 // Banner Ad - positioned based on orientation
                 if (isLandscape && isAdLoaded.value)
@@ -702,34 +640,118 @@ class FileViewPage extends HookConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildFileView(
-    FileModel file,
-    SecretKey folderKey,
-    FileMetadata meta,
-    DateTime? trustedNow,
-    bool isVideo,
-  ) {
-    if (isVideo) {
-      return _VideoView(
+class _FileContentView extends HookConsumerWidget {
+  final FileModel file;
+  final SecretKey folderKey;
+  final bool allowSave;
+  final AsyncSnapshot<DateTime?> trustedTimeSnapshot;
+  final bool isAdLoaded;
+  final int rotationTurns;
+  final bool isActive;
+  final VoidCallback onControlsToggle;
+
+  const _FileContentView({
+    super.key,
+    required this.file,
+    required this.folderKey,
+    required this.allowSave,
+    required this.trustedTimeSnapshot,
+    required this.isAdLoaded,
+    required this.rotationTurns,
+    this.isActive = true,
+    required this.onControlsToggle,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fileDetailsFuture = useMemoized(() async {
+      DateTime? trustedNow;
+      if (file.expiryDate != null) {
+        if (trustedTimeSnapshot.hasError) throw trustedTimeSnapshot.error!;
+        if (!trustedTimeSnapshot.hasData) return null;
+        trustedNow = trustedTimeSnapshot.data;
+      }
+
+      final vault = ref.read(vaultServiceProvider);
+      final res = await vault.decryptMetadata(
         file: file,
         folderKey: folderKey,
-        fileSize: meta.size,
         trustedNow: trustedNow,
-        isAdLoaded: false, // This method is unused, default to false
-        allowSave: allowSave,
+      );
+
+      return res.fold((l) => throw Exception(ErrorMapper.getUserFriendlyError(l)), (meta) {
+        if (meta.mimeType == 'application/octet-stream') {
+          final ext = meta.fileName.split('.').last.toLowerCase();
+          String newMime = 'application/octet-stream';
+          switch (ext) {
+            case 'jpg':
+            case 'jpeg':
+              newMime = 'image/jpeg';
+              break;
+            case 'png':
+              newMime = 'image/png';
+              break;
+            case 'gif':
+              newMime = 'image/gif';
+              break;
+            case 'webp':
+              newMime = 'image/webp';
+              break;
+            case 'bmp':
+              newMime = 'image/bmp';
+              break;
+            case 'mp4':
+            case 'm4v':
+            case 'mov':
+              newMime = 'video/mp4';
+              break;
+            case 'txt':
+              newMime = 'text/plain';
+              break;
+            case 'pdf':
+              newMime = 'application/pdf';
+              break;
+          }
+          return meta.copyWith(mimeType: newMime);
+        }
+        return meta;
+      });
+    }, [file.id, trustedTimeSnapshot.data, trustedTimeSnapshot.error]);
+
+    final fileDetails = useFuture(fileDetailsFuture);
+
+    if (fileDetails.hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: AutoSizeText(
+            ErrorMapper.getUserFriendlyError(fileDetails.error!),
+            style: GoogleFonts.inter(color: Colors.red.shade300),
+            textAlign: TextAlign.center,
+            maxLines: 5,
+            minFontSize: 12,
+          ),
+        ),
       );
     }
 
-    final mime = meta.mimeType;
+    if (!fileDetails.hasData) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final meta = fileDetails.data!;
+    final mime = meta.mimeType.toLowerCase();
 
     if (mime.startsWith('image/svg')) {
-      return Center(
+      return GestureDetector(
+        onTap: onControlsToggle,
         child: _SvgView(
           file: file,
           folderKey: folderKey,
           fileSize: meta.size,
-          trustedNow: trustedNow,
+          trustedNow: trustedTimeSnapshot.data,
         ),
       );
     }
@@ -739,17 +761,34 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileSize: meta.size,
-        trustedNow: trustedNow,
+        trustedNow: trustedTimeSnapshot.data,
+        isAdLoaded: isAdLoaded,
+        allowSave: allowSave,
+        rotationTurns: rotationTurns,
+        isActive: isActive,
+      );
+    }
+
+    if (mime.startsWith('video/')) {
+      return _VideoView(
+        file: file,
+        folderKey: folderKey,
+        fileSize: meta.size,
+        trustedNow: trustedTimeSnapshot.data,
+        isAdLoaded: isAdLoaded,
         allowSave: allowSave,
       );
     }
 
     if (mime.startsWith('text/')) {
-      return _TextView(
-        file: file,
-        folderKey: folderKey,
-        fileSize: meta.size,
-        trustedNow: trustedNow,
+      return GestureDetector(
+        onTap: onControlsToggle,
+        child: _TextView(
+          file: file,
+          folderKey: folderKey,
+          fileSize: meta.size,
+          trustedNow: trustedTimeSnapshot.data,
+        ),
       );
     }
 
@@ -758,7 +797,7 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileSize: meta.size,
-        trustedNow: trustedNow,
+        trustedNow: trustedTimeSnapshot.data,
       );
     }
 
@@ -767,25 +806,7 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileSize: meta.size,
-        trustedNow: trustedNow,
-      );
-    }
-
-    if (mime.contains('word') || mime.contains('document')) {
-      return _UnsupportedFileView(
-        file: file,
-        folderKey: folderKey,
-        fileName: meta.fileName,
-        allowSave: allowSave,
-      );
-    }
-
-    if (mime.contains('presentation') || mime.contains('powerpoint')) {
-      return _UnsupportedFileView(
-        file: file,
-        folderKey: folderKey,
-        fileName: meta.fileName,
-        allowSave: allowSave,
+        trustedNow: trustedTimeSnapshot.data,
       );
     }
 
@@ -794,10 +815,11 @@ class FileViewPage extends HookConsumerWidget {
         file: file,
         folderKey: folderKey,
         fileSize: meta.size,
-        trustedNow: trustedNow,
+        trustedNow: trustedTimeSnapshot.data,
       );
     }
 
+    // Fallback for other types
     return _UnsupportedFileView(
       file: file,
       folderKey: folderKey,
@@ -960,6 +982,7 @@ class _LoadingProgressView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isIndeterminate = progress <= 0;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -967,360 +990,155 @@ class _LoadingProgressView extends StatelessWidget {
           SizedBox(
             width: 200,
             child: LinearProgressIndicator(
-              value: progress,
+              value: isIndeterminate ? null : progress,
               color: Colors.white30,
               backgroundColor: Colors.white10,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '${(progress * 100).toInt()}%',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: Colors.white54,
-              fontFeatures: [const FontFeature.tabularFigures()],
+          if (!isIndeterminate) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${(progress * 100).toInt()}%',
+              style: GoogleFonts.inter(
+                color: Colors.white30,
+                fontSize: 12,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
+final Map<String, Uint8List> _decryptedImageCache = {};
+
 class _ImageView extends HookConsumerWidget {
+  // Preload a file into cache and precache it for faster decoding
+  static Future<void> preload({
+    required WidgetRef ref,
+    required FileModel file,
+    required SecretKey folderKey,
+    DateTime? trustedNow,
+    required BuildContext context,
+  }) async {
+    if (_decryptedImageCache.containsKey(file.id)) return;
+
+    try {
+      final vault = ref.read(vaultServiceProvider);
+      final bytes = await vault.decryptFileCompute(
+        file: file,
+        folderKey: folderKey,
+      );
+      _decryptedImageCache[file.id] = bytes;
+
+      // Limit cache size to 3 for RAM optimization (Prev, Current, Next)
+      if (_decryptedImageCache.length > 3) {
+        _decryptedImageCache.remove(_decryptedImageCache.keys.first);
+      }
+
+      // Pre-decode the image using precacheImage
+      if (context.mounted) {
+        await precacheImage(MemoryImage(bytes), context);
+      }
+    } catch (_) {
+      // Silently fail for background preloads
+    }
+  }
+
   final FileModel file;
   final SecretKey folderKey;
   final int fileSize;
   final DateTime? trustedNow;
+  final bool isAdLoaded;
   final bool allowSave;
+  final int rotationTurns;
+  final bool isActive;
 
   const _ImageView({
     required this.file,
     required this.folderKey,
     required this.fileSize,
     this.trustedNow,
+    required this.isAdLoaded,
     required this.allowSave,
+    this.rotationTurns = 0,
+    this.isActive = true,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 1. Safety Check: Memory Limit
     if (fileSize > 50 * 1024 * 1024) {
-      return _TooLargeFileView(
-        fileName: file.id,
-        message: "Image is too large to render safely in-app.",
-        file: file,
-        folderKey: folderKey,
-      );
+      return Center(child: Text("Image too large"));
     }
 
     final imageBytes = useState<Uint8List?>(null);
     final error = useState<Object?>(null);
     final progress = useState<double>(0.0);
-    final isSaving = useState(false);
+    final transformationController = useTransformationController();
 
-    // View State
-    final rotationTurns = useState(0);
-    final showControls = useState(true);
-
-    // Zoom State
-    final transformationController = useMemoized(
-      () => TransformationController(),
-    );
     useEffect(() {
-      return transformationController.dispose;
-    }, [transformationController]);
-
-    final animationController = useAnimationController(
-      duration: const Duration(milliseconds: 200),
-    );
-    final animation = useState<Animation<Matrix4>?>(null);
-
-    // Auto-hide controls timer
-    final hideTimer = useRef<Timer?>(null);
-
-    void startHideTimer() {
-      hideTimer.value?.cancel();
-      hideTimer.value = Timer(const Duration(seconds: 3), () {
-        if (context.mounted) showControls.value = false;
-      });
-    }
-
-    void toggleControls() {
-      showControls.value = !showControls.value;
-      if (showControls.value) {
-        startHideTimer();
-      } else {
-        hideTimer.value?.cancel();
+      // Check cache first
+      if (_decryptedImageCache.containsKey(file.id)) {
+        imageBytes.value = _decryptedImageCache[file.id];
+        return null;
       }
-    }
 
-    useEffect(() {
-      final vault = ref.read(vaultServiceProvider);
-      int received = 0;
       bool isCancelled = false;
-
-      // Start timer on load
-      startHideTimer();
-
-      final subscription = vault
-          .decryptFileStream(
+      Future<void> load() async {
+        try {
+          final vault = ref.read(vaultServiceProvider);
+          final bytes = await vault.decryptFileCompute(
             file: file,
             folderKey: folderKey,
-            trustedNow: trustedNow,
-          )
-          .listen(
-            (chunk) {
-              // Accumulation handled below
-            },
-            onError: (e) {
-              if (!isCancelled) error.value = e;
-            },
           );
-
-      final bytes = <int>[];
-      subscription.onData((chunk) {
-        if (isCancelled) return;
-        bytes.addAll(chunk);
-        received += chunk.length;
-        progress.value = fileSize > 0
-            ? (received / fileSize).clamp(0.0, 1.0)
-            : 0.0;
-      });
-
-      subscription.onDone(() {
-        if (!isCancelled) {
-          imageBytes.value = Uint8List.fromList(bytes);
-        }
-      });
-
-      return () {
-        isCancelled = true;
-        subscription.cancel();
-        hideTimer.value?.cancel();
-      };
-    }, []);
-
-    // Zoom Animation Listener
-    useEffect(() {
-      void listener() {
-        if (animation.value != null) {
-          transformationController.value = animation.value!.value;
+          if (!isCancelled) {
+            _decryptedImageCache[file.id] = bytes;
+            // Limit cache size to 3
+            if (_decryptedImageCache.length > 3) {
+              _decryptedImageCache.remove(_decryptedImageCache.keys.first);
+            }
+            imageBytes.value = bytes;
+          }
+        } catch (e) {
+          if (!isCancelled) error.value = e;
         }
       }
 
-      animationController.addListener(listener);
-      return () => animationController.removeListener(listener);
-    }, [animation.value]);
+      load();
+      return () => isCancelled = true;
+    }, [file.id]);
 
-    void onDoubleTap(TapDownDetails details) {
-      final position = details.localPosition;
-
-      Matrix4 endMatrix;
-      if (transformationController.value.getMaxScaleOnAxis() > 1.5) {
-        // Zoom out
-        endMatrix = Matrix4.identity();
-      } else {
-        // Zoom in to tap position
-        // Scale factor: 2.5x
-        final double scale = 2.5;
-        final double x = -position.dx * (scale - 1);
-        final double y = -position.dy * (scale - 1);
-
-        endMatrix = Matrix4.identity()
-          ..translate(x, y)
-          ..scale(scale);
-      }
-
-      animation.value =
-          Matrix4Tween(
-            begin: transformationController.value,
-            end: endMatrix,
-          ).animate(
-            CurveTween(curve: Curves.easeInOut).animate(animationController),
-          );
-
-      animationController.forward(from: 0);
-    }
-
-    if (error.value != null) {
-      return Center(
-        child: Text(
-          'Error decrypting file: ${error.value}',
-          style: GoogleFonts.inter(color: Colors.white54),
-        ),
-      );
-    }
-
-    if (imageBytes.value == null) {
+    if (error.value != null) return Center(child: Text("Error: ${error.value}"));
+    if (imageBytes.value == null)
       return _LoadingProgressView(progress: progress.value);
-    }
 
-    return Stack(
-      children: [
-        // 1. Image Layer with Zoom & Pan
-        Positioned.fill(
-          child: GestureDetector(
-            onDoubleTapDown: onDoubleTap,
-            onTap: toggleControls,
-            child: Container(
-              color: Colors.transparent, // Capture taps
-              child: InteractiveViewer(
-                transformationController: transformationController,
-                clipBehavior: Clip.none,
-                minScale: 0.5,
-                maxScale: 5.0,
-                onInteractionStart: (_) {
-                  showControls.value = false;
-                  hideTimer.value?.cancel();
-                },
-                child: Center(
-                  child: RotatedBox(
-                    quarterTurns: rotationTurns.value,
-                    child: Image.memory(
-                      imageBytes.value!,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.broken_image,
-                        color: Colors.white24,
-                        size: 50,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+    // Calculate optimal cache size based on screen size to reduce memory usage on low-end phones
+    final mediaQuery = MediaQuery.of(context);
+    final devicePixelRatio = mediaQuery.devicePixelRatio;
+    final cacheWidth = (mediaQuery.size.width * devicePixelRatio).toInt();
 
-        // 2. Controls overlay
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          top: showControls.value ? 0 : -100,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top,
-              bottom: 10,
-              left: 10,
-              right: 10,
-            ),
-            decoration: const BoxDecoration(color: Colors.transparent),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const Spacer(),
-                // File info could go here
-                if (allowSave)
-                  if (isSaving.value)
-                    const Padding(
-                      padding: EdgeInsets.all(12.0),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(
-                        Icons.open_in_new_rounded,
-                        color: Colors.white,
-                      ),
-                      tooltip: 'Open Externally',
-                      onPressed: () async {
-                        if (trustedNow != null) {
-                          // Optional: check expiry again?
-                        }
+    final imageWidget = Center(
+      child: Image.memory(
+        imageBytes.value!,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        // Optimization for low-end phones: only decode what's needed for the screen width
+        // Specifying only width allows Flutter to maintain aspect ratio automatically.
+        cacheWidth: cacheWidth,
+      ),
+    );
 
-                        isSaving.value = true;
-                        try {
-                          await openExternally(
-                            context,
-                            ref,
-                            file,
-                            folderKey,
-                            "image",
-                          );
-                        } finally {
-                          isSaving.value = false;
-                        }
-                      },
-                    ),
-              ],
-            ),
-          ),
-        ),
-
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          bottom: showControls.value ? 30 : -100,
-          right: 30, // Floating action button style
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton(
-                heroTag: null, // Disable Hero to prevent nesting error
-                mini: true,
-                backgroundColor: Colors.white12,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Colors.white24),
-                ),
-                onPressed: () {
-                  animationController.reset();
-                  transformationController.value = Matrix4.identity();
-                  rotationTurns.value = (rotationTurns.value + 1) % 4;
-                  startHideTimer();
-                },
-                child: const Icon(
-                  Icons.rotate_right_rounded,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Hint text for first-time users could go here
-        if (showControls.value)
-          Positioned(
-            bottom: 30,
-            left: 30,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  "${(progress.value * 100).toInt()}% Loaded", // Or other info
-                  style: GoogleFonts.robotoMono(
-                    color: Colors.white38,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+    return RotatedBox(
+      quarterTurns: rotationTurns,
+      child: isActive
+          ? InteractiveViewer(
+              transformationController: transformationController,
+              minScale: 1.0,
+              maxScale: 5.0,
+              child: imageWidget,
+            )
+          : imageWidget,
     );
   }
 }

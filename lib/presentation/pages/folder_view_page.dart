@@ -1375,6 +1375,34 @@ class _FileThumbnail extends HookConsumerWidget {
                 }
                 return;
               }
+
+              // Get all files in the current folder
+              final allFiles = ref.read(fileNotifierProvider(file.folderId)).valueOrNull ?? [];
+              
+              // Filter to include only images for swipe navigation
+              // We need to check if they are images. Since metadata is async,
+              // we might have to rely on extension for immediate filtering 
+              // or just pass all and let FileViewPage handle it if we want to be safe.
+              // But requirements say "Only images should be included".
+              // Let's use a helper to identify images based on extensions for immediate filtering.
+              bool isImageFile(FileModel f) {
+                // Try to get extension from the encryptedMetadata if it's visible? No, it's encrypted.
+                // However, we might have cached metadata.
+                final meta = ref.read(fileMetadataProvider(f, folderKey)).valueOrNull;
+                if (meta != null) {
+                  return meta.mimeType.startsWith('image/') || 
+                         (meta.mimeType == 'application/octet-stream' && 
+                          ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(meta.fileName.split('.').last.toLowerCase()));
+                }
+                // Fallback: if we don't have metadata yet, we might have to assume or pre-fetch.
+                // For now, let's include it if it's the current file or if it has a thumbnail (which usually means it's an image).
+                if (f.id == file.id) return true;
+                return ref.read(fileThumbnailProvider(f, folderKey)).valueOrNull != null;
+              }
+
+              final imageFiles = allFiles.where(isImageFile).toList();
+              final initialIndex = imageFiles.indexWhere((f) => f.id == file.id);
+
               Navigator.push(
                 context,
                 PageRouteBuilder(
@@ -1386,6 +1414,8 @@ class _FileThumbnail extends HookConsumerWidget {
                       file: file,
                       folderKey: folderKey,
                       allowSave: allowSave,
+                      allImageFiles: imageFiles.isEmpty ? [file] : imageFiles,
+                      initialIndex: initialIndex >= 0 ? initialIndex : 0,
                     ),
                   ),
                 ),
