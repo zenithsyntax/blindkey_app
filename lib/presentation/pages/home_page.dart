@@ -1,7 +1,6 @@
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/application/services/ad_service.dart';
 import 'package:blindkey_app/application/services/file_intent_service.dart';
-import 'package:blindkey_app/application/services/file_intent_service.dart';
 import 'package:blindkey_app/application/store/folder_notifier.dart';
 import 'package:blindkey_app/presentation/dialogs/create_folder_dialog.dart';
 import 'package:blindkey_app/presentation/dialogs/terms_dialog.dart';
@@ -693,8 +692,6 @@ class HomePage extends HookConsumerWidget {
                         onSelected: (value) {
                           if (value == 'rename') {
                             _showRenameDialog(context, ref, folder);
-                          } else if (value == 'delete') {
-                            _confirmDelete(context, ref, folder);
                           }
                         },
                         itemBuilder: (context) => [
@@ -711,25 +708,6 @@ class HomePage extends HookConsumerWidget {
                                 Text(
                                   'Rename',
                                   style: GoogleFonts.inter(color: Colors.white),
-                                ),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.delete_outline_rounded,
-                                  size: 18,
-                                  color: Colors.redAccent,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Delete',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.redAccent,
-                                  ),
                                 ),
                               ],
                             ),
@@ -812,51 +790,6 @@ class HomePage extends HookConsumerWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton({
-    required VoidCallback onPressed,
-    required IconData icon,
-    required String label,
-    required bool isPrimary,
-    required bool isTablet,
-    required bool isLargeScreen,
-  }) {
-    return SizedBox(
-      height: 52,
-      width: isTablet || isLargeScreen ? 300 : double.infinity,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isPrimary
-              ? Colors.white
-              : Colors.white.withOpacity(0.05),
-          foregroundColor: isPrimary ? Colors.black : Colors.white,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: isPrimary
-                ? BorderSide.none
-                : BorderSide(color: Colors.white.withOpacity(0.1)),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1264,64 +1197,6 @@ class HomePage extends HookConsumerWidget {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context, WidgetRef ref, dynamic folder) {
-    showDialog(
-      context: context,
-      builder: (context) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF1A1A1A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withOpacity(0.08)),
-          ),
-          title: Text(
-            'Delete Vault?',
-            style: GoogleFonts.inter(color: Colors.white),
-          ),
-          content: Text(
-            'This will permanently delete "${folder.name}" and all its contents. This action cannot be undone.',
-            style: GoogleFonts.inter(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(color: Colors.white60),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                try {
-                  await ref
-                      .read(folderNotifierProvider.notifier)
-                      .deleteFolder(folder.id);
-                  if (context.mounted) Navigator.pop(context);
-                } catch (e) {
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    CustomSnackbar.showError(
-                      context,
-                      ErrorMapper.getUserFriendlyError(e),
-                    );
-                  }
-                }
-              },
-              child: Text(
-                'Delete',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFFC62828),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

@@ -24,7 +24,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:google_fonts/google_fonts.dart'; // Added Google Fonts
 import 'package:path_provider/path_provider.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:blindkey_app/presentation/utils/error_mapper.dart';
 import 'package:blindkey_app/presentation/utils/custom_snackbar.dart';
 import 'package:auto_size_text/auto_size_text.dart';
@@ -217,6 +216,8 @@ class FolderViewPage extends HookConsumerWidget {
                             },
                           ),
                         );
+                      } else if (value == 'delete_vault') {
+                        _confirmDelete(context, ref, folder);
                       }
                     },
                     itemBuilder: (context) => [
@@ -233,6 +234,23 @@ class FolderViewPage extends HookConsumerWidget {
                             Text(
                               'Change Password',
                               style: GoogleFonts.inter(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete_vault',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 20,
+                              color: Colors.redAccent,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Delete Vault',
+                              style: GoogleFonts.inter(color: Colors.redAccent),
                             ),
                           ],
                         ),
@@ -809,39 +827,63 @@ class FolderViewPage extends HookConsumerWidget {
     CustomSnackbar.showError(context, message);
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.03),
-              border: Border.all(color: Colors.white.withOpacity(0.05)),
-            ),
-            child: const Icon(
-              Icons.folder_open_rounded,
-              size: 48,
-              color: Colors.white24,
-            ),
+  void _confirmDelete(BuildContext context, WidgetRef ref, FolderModel folder) {
+    showDialog(
+      context: context,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withOpacity(0.08)),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'This vault is empty',
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
+          title: Text(
+            'Delete Vault?',
+            style: GoogleFonts.inter(color: Colors.white),
+          ),
+          content: Text(
+            'This will permanently delete "${folder.name}" and all its contents. This action cannot be undone.',
+            style: GoogleFonts.inter(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(color: Colors.white60),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Upload files to secure them.',
-            style: GoogleFonts.inter(fontSize: 14, color: Colors.white38),
-          ),
-        ],
+            TextButton(
+              onPressed: () async {
+                try {
+                  await ref
+                      .read(folderNotifierProvider.notifier)
+                      .deleteFolder(folder.id);
+                  if (context.mounted) {
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context); // Back to HomePage
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    CustomSnackbar.showError(
+                      context,
+                      ErrorMapper.getUserFriendlyError(e),
+                    );
+                  }
+                }
+              },
+              child: Text(
+                'Delete',
+                style: GoogleFonts.inter(
+                  color: const Color(0xFFC62828),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
