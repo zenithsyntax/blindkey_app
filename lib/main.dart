@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:blindkey_app/application/onboarding/terms_notifier.dart';
 import 'package:blindkey_app/application/providers.dart';
 import 'package:blindkey_app/presentation/pages/auth/app_lock_screen.dart';
-import 'package:blindkey_app/presentation/pages/home_page.dart';
 import 'package:blindkey_app/presentation/pages/splash_screen.dart';
 import 'package:blindkey_app/presentation/pages/onboarding_page.dart';
 import 'package:blindkey_app/presentation/theme/app_theme.dart';
@@ -17,9 +16,11 @@ import 'package:screen_protector/screen_protector.dart';
 import 'package:safe_device/safe_device.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
+import 'package:cryptography_flutter/cryptography_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterCryptography.enable();
   // Initialize AdMob
   await MobileAds.instance.initialize();
 

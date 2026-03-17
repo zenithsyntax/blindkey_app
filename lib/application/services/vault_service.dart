@@ -291,8 +291,9 @@ class VaultService {
       key: folderKey,
     );
 
-    if (encryptedMetadataRes.isLeft())
+    if (encryptedMetadataRes.isLeft()) {
       throw Exception("Metadata Encryption Failed");
+    }
     final encryptedMetadata = encryptedMetadataRes.getOrElse(() => []);
 
     // 4. Generate Thumbnail (Local, unencrypted for performance)
@@ -386,8 +387,7 @@ class VaultService {
         final block = buffer.sublist(0, blockSize);
         buffer = buffer.sublist(blockSize);
 
-        final nonce = block.sublist(0, 12);
-        final ciphertextWithTag = block.sublist(12);
+        // nonce and ciphertextWithTag are extracted via SecretBox.fromConcatenation below
 
         // GCM: ciphertext includes tag at end?
         // `secretBox.concatenation()` puts nonce then ciphertext then tag.
@@ -662,7 +662,6 @@ class VaultService {
     String path,
     String password,
   ) async {
-    File? tempZipFile;
     try {
       final file = File(path);
       if (!await file.exists()) {
@@ -681,147 +680,132 @@ class VaultService {
         );
       }
 
-      final fileLen = await file.length();
-      if (fileLen < 32 + 22) {
-        // 32 byte salt + min zip size
-        return left(const Failure.unexpected("Invalid file"));
+      // 2. Perform Native Argon2id derivation on Main Isolate for speed
+      // (Background isolates often fail to bind native MethodChannels)
+      final derivedSalt = await file.open().then((f) async {
+        final s = await f.read(32);
+        await f.close();
+        return s;
+      });
+
+      final argon2 = Argon2id(
+        parallelism: 1,
+        memory: 65536,
+        iterations: 4,
+        hashLength: 32,
+      );
+      
+      final derivedKey = await argon2.deriveKeyFromPassword(
+        password: password,
+        nonce: derivedSalt,
+      );
+      final derivedKeyBytes = await derivedKey.extractBytes();
+
+      // 3. Spawn verification isolate for heavy ZIP processing
+      final receivePort = ReceivePort();
+      await Isolate.spawn(
+        _isolateImportVerifyEntry,
+        _IsolateImportVerifyArgs(
+          sendPort: receivePort.sendPort,
+          filePath: path,
+          password: password,
+          trustedNowIso: trustedNow.toIso8601String(),
+          keyBytes: derivedKeyBytes,
+          salt: derivedSalt,
+        ),
+      );
+
+      final result = await receivePort.first as _IsolateImportVerifyResult;
+
+      if (result.status != ImportResultStatus.success) {
+        if (result.status == ImportResultStatus.invalidPassword) {
+          return left(const Failure.invalidPassword());
+        } else if (result.status == ImportResultStatus.expired) {
+          return left(const Failure.fileExpired());
+        } else {
+          return left(Failure.unexpected(result.errorMessage ?? "Unknown error"));
+        }
       }
 
-      // 2. Read Salt (First 32 bytes)
-      final saltBytes = await file.openRead(0, 32).first;
-      // .first might not give full 32 bytes if chunked differently, but typically does for small read.
-      // Safer: read specific amount.
-      final openFile = await file.open();
-      final salt = await openFile.read(32);
-      await openFile.close();
+      final map = result.manifest!;
+      final salt = result.salt!;
+      final key = SecretKey(result.keyBytes!);
 
-      if (salt.length != 32)
-        return left(const Failure.unexpected("Invalid file header"));
+      // 3. Import Folder (DB operation must be on main thread)
+      final newFolderId = const Uuid().v4();
+      final folder = FolderModel(
+        id: newFolderId,
+        name: map['name'] + " (Imported)",
+        salt: base64Encode(salt),
+        verificationHash: map['verificationHash'],
+        createdAt: trustedNow,
+        allowSave: map['allowSave'] ?? true,
+      );
 
-      // 3. Extract ZIP portion to Temp File
-      // We cannot read the ZIP directly from offset 32 because ZipDecoder expects 0-based offsets.
-      // Copying the ZIP stream to a temporary file allows efficient random access without RAM overhead.
-      final tempDir = await getTemporaryDirectory();
-      final tempZipPath = '${tempDir.path}/import_${const Uuid().v4()}.zip';
-      tempZipFile = File(tempZipPath);
+      await _folderRepository.saveFolder(folder);
 
-      // Stream copy from offset 32 to temp file
-      final zipSink = tempZipFile.openWrite();
-      await file
-          .openRead(32)
-          .pipe(zipSink); // pipes stream to sink and closes sink
+      // 4. Import Files
+      final filesList = (map['files'] as List)
+          .map((e) => FileMetadata.fromJson(e))
+          .toList();
 
-      // 4. Decode ZIP from Temp File (Disk-based)
-      final inputStream = InputFileStream(tempZipPath);
+      final vaultPathRes = await _storageService.createEncryptedFileDir();
+      final vaultPath = vaultPathRes.getOrElse(() => '');
+
+      // Re-open archive in isolate or here? 
+      // Since we already verified, we can do the heavy extraction here OR in another isolate.
+      // To keep it simple and responsive, let's do the extraction in the main thread for now, 
+      // as it's mostly I/O bound and we already passed the "wait time for error" bottleneck.
+      // However, to be fully optimized, we should stream extraction too.
+      
+      // We need the archive again.
+      final inputStream = InputFileStream(path);
+      inputStream.skip(32); // Skip salt
       final archive = ZipDecoder().decodeBuffer(inputStream);
 
-      // 5. Derive Key
-      final key = await _cryptoService.deriveKeyFromPassword(password, salt);
+      for (final meta in filesList) {
+        if (meta.expiryDate != null &&
+            trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
+          continue;
+        }
 
-      // 6. Manifest
-      final manifestFile = archive.findFile('manifest.enc');
-      if (manifestFile == null) {
-        await inputStream.close();
-        return left(
-          const Failure.unexpected("Invalid blindkey file structure"),
-        );
-      }
+        final zipFile = archive.findFile(meta.encryptedFilePath);
+        if (zipFile != null) {
+          final newFileId = const Uuid().v4();
+          final newPath = '$vaultPath/$newFileId.enc';
 
-      // Manifest is small, safe to load into memory
-      final encManifest = manifestFile.content as List<int>;
-      final decManifestRes = await _cryptoService.decryptData(
-        encryptedData: encManifest,
-        key: key,
-      );
+          // EFFICIENT WRITE: Stream from ZIP to Disk
+          final outputStream = OutputFileStream(newPath);
+          zipFile.writeContent(outputStream);
+          await outputStream.close();
 
-      return await decManifestRes.fold(
-        (l) async {
-          await inputStream.close();
-          return left(const Failure.invalidPassword());
-        },
-        (clearBytes) async {
-          final json = utf8.decode(clearBytes);
-          final map = jsonDecode(json);
-
-          // Check Global Expiry
-          if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
-            final expiryIso = map['expiryDate'] as String;
-            final expiryDate = DateTime.tryParse(expiryIso);
-            if (expiryDate != null &&
-                trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
-              await inputStream.close();
-              return left(const Failure.fileExpired());
-            }
-          }
-
-          // Import Folder
-          final newFolderId = const Uuid().v4();
-          final folder = FolderModel(
-            id: newFolderId,
-            name: map['name'] + " (Imported)",
-            salt: base64Encode(salt),
-            verificationHash: map['verificationHash'],
-            createdAt: trustedNow,
-            allowSave: map['allowSave'] ?? true,
+          // Update Metadata
+          final newMeta = meta.copyWith(
+            id: newFileId,
+            encryptedFilePath: newPath,
           );
 
-          await _folderRepository.saveFolder(folder);
+          final metaJson = jsonEncode(newMeta.toJson());
+          final encMetaRes = await _cryptoService.encryptData(
+            data: utf8.encode(metaJson),
+            key: key,
+          );
+          final encMeta = encMetaRes.getOrElse(() => []);
 
-          // Import Files
-          final filesList = (map['files'] as List)
-              .map((e) => FileMetadata.fromJson(e))
-              .toList();
+          final fileModel = FileModel(
+            id: newFileId,
+            folderId: newFolderId,
+            encryptedMetadata: base64Encode(encMeta),
+            encryptedPreviewPath: "",
+            expiryDate: meta.expiryDate,
+          );
 
-          final vaultPathRes = await _storageService.createEncryptedFileDir();
-          final vaultPath = vaultPathRes.getOrElse(() => '');
+          await _fileRepository.saveFileModel(fileModel);
+        }
+      }
 
-          for (final meta in filesList) {
-            if (meta.expiryDate != null &&
-                trustedNow.toUtc().isAfter(meta.expiryDate!.toUtc())) {
-              continue;
-            }
-
-            final zipFile = archive.findFile(meta.encryptedFilePath);
-            if (zipFile != null) {
-              final newFileId = const Uuid().v4();
-              final newPath = '$vaultPath/$newFileId.enc';
-
-              // EFFICIENT WRITE: Stream from ZIP to Disk
-              final outputStream = OutputFileStream(newPath);
-              zipFile.writeContent(outputStream);
-              await outputStream.close();
-
-              // Update Metadata
-              final newMeta = meta.copyWith(
-                id: newFileId,
-                encryptedFilePath: newPath,
-              );
-
-              final metaJson = jsonEncode(newMeta.toJson());
-              final encMetaRes = await _cryptoService.encryptData(
-                data: utf8.encode(metaJson),
-                key: key,
-              );
-              final encMeta = encMetaRes.getOrElse(() => []);
-
-              final fileModel = FileModel(
-                id: newFileId,
-                folderId: newFolderId,
-                encryptedMetadata: base64Encode(encMeta),
-                encryptedPreviewPath: "",
-                expiryDate: meta.expiryDate,
-              );
-
-              await _fileRepository.saveFileModel(fileModel);
-            }
-          }
-
-          await inputStream.close();
-          return right(unit);
-        },
-      );
-    } on FileSystemException catch (e) {
-      return left(Failure.fileSystemError(e.message));
+      await inputStream.close();
+      return right(unit);
     } catch (e) {
       if (e.toString().contains("Internet") ||
           e.toString().contains("SocketException")) {
@@ -830,15 +814,9 @@ class VaultService {
         );
       }
       return left(Failure.unexpected(e.toString()));
-    } finally {
-      // Cleanup Temp Zip
-      if (tempZipFile != null && await tempZipFile.exists()) {
-        try {
-          await tempZipFile.delete();
-        } catch (_) {}
-      }
     }
   }
+
 
   Future<Either<Failure, FileMetadata>> decryptMetadata({
     required FileModel file,
@@ -905,7 +883,7 @@ class VaultService {
       case 'mp4':
       case 'm4v':
       case 'mov':
-        return 'video/mp4'; // basic mapping
+        return 'video/mp4'; 
       case 'avi':
         return 'video/x-msvideo';
       case 'mkv':
@@ -922,13 +900,13 @@ class VaultService {
       case 'md':
       case 'csv':
         return 'text/plain';
-      case 'html': // Special handling maybe?
+      case 'html': 
         return 'text/html';
       case 'svg':
         return 'image/svg+xml';
       case 'tif':
       case 'tiff':
-        return 'image/tiff'; // Not fully supported by Flutter Image, may need conversion or open external
+        return 'image/tiff'; 
       case 'bmp':
         return 'image/bmp';
       case 'pdf':
@@ -948,7 +926,7 @@ class VaultService {
       case 'wma':
       case 'flac':
       case 'm4a':
-        return 'audio/mpeg'; // Generic audio
+        return 'audio/mpeg'; 
       default:
         return 'application/octet-stream';
     }
@@ -963,7 +941,6 @@ class VaultService {
 
     final items = <_IsolateBulkEncryptionItem>[];
     final fileModels = <int, FileModel>{};
-    // Pre-calculate everything on Main Thread
     for (var i = 0; i < files.length; i++) {
       final originalFile = files[i];
       final fileKey = await _cryptoService.generateRandomKey();
@@ -985,7 +962,6 @@ class VaultService {
         ),
       );
 
-      // Prepare Metadata
       final metadata = FileMetadata(
         id: fileId,
         fileName: originalFile.path.split(Platform.pathSeparator).last,
@@ -1015,25 +991,20 @@ class VaultService {
       );
     }
 
-    // Spawn Isolate
     final receivePort = ReceivePort();
     await Isolate.spawn(
       _isolateBulkEncryptionEntry,
       _IsolateBulkEncryptionArgs(sendPort: receivePort.sendPort, items: items),
     );
 
-    // Listen
     int completed = 0;
     await for (final message in receivePort) {
       if (message is int) {
-        // Success for index
         final index = message;
         if (fileModels.containsKey(index)) {
           final fileModel = fileModels[index]!;
           await _fileRepository.saveFileModel(fileModel);
 
-          // Helper to generate thumbnail without blocking too much?
-          // Only image/video
           await _thumbnailService.generateThumbnail(
             originalPath: files[index].path,
             fileId: fileModel.id,
@@ -1049,7 +1020,7 @@ class VaultService {
       }
     }
   }
-} // Closed VaultService
+} // Properly closing VaultService
 
 class _IsolateBulkEncryptionItem {
   final int index;
@@ -1371,7 +1342,7 @@ Future<void> _isolateExportEntry(_IsolateExportArgs args) async {
     // Encrypt Manifest manually using AesGcm
     final algorithm = AesGcm.with256bits();
     final secretKey = SecretKey(args.folderKeyBytes);
-    final nonce = await algorithm.newNonce(); // Random nonce
+    final nonce = algorithm.newNonce(); // Random nonce
 
     final secretBox = await algorithm.encrypt(
       utf8.encode(manifestJson),
@@ -1461,4 +1432,108 @@ Future<Uint8List> _backgroundDecryption(_IsolateDecryptionArgs args) async {
   }
 
   return builder.takeBytes();
+}
+
+enum ImportResultStatus { success, invalidPassword, expired, error }
+
+class _IsolateImportVerifyResult {
+  final ImportResultStatus status;
+  final String? errorMessage;
+  final Map<String, dynamic>? manifest;
+  final List<int>? salt;
+  final List<int>? keyBytes;
+
+  _IsolateImportVerifyResult({
+    required this.status,
+    this.errorMessage,
+    this.manifest,
+    this.salt,
+    this.keyBytes,
+  });
+}
+
+class _IsolateImportVerifyArgs {
+  final SendPort sendPort;
+  final String filePath;
+  final String password;
+  final String trustedNowIso;
+
+  final List<int> keyBytes;
+  final List<int> salt;
+
+  _IsolateImportVerifyArgs({
+    required this.sendPort,
+    required this.filePath,
+    required this.password,
+    required this.trustedNowIso,
+    required this.keyBytes,
+    required this.salt,
+  });
+}
+
+Future<void> _isolateImportVerifyEntry(_IsolateImportVerifyArgs args) async {
+  try {
+    final salt = args.salt;
+    final keyBytes = args.keyBytes;
+    final secretKey = SecretKey(keyBytes);
+
+    final trustedNow = DateTime.parse(args.trustedNowIso);
+
+    final rawStream = InputFileStream(args.filePath);
+    final inputStream = InputFileStream.clone(rawStream, position: 32);
+
+    final archive = ZipDecoder().decodeBuffer(inputStream);
+
+    // 3. Decrypt Manifest
+    final manifestFile = archive.findFile('manifest.enc');
+    if (manifestFile == null) {
+      await inputStream.close();
+      args.sendPort.send(_IsolateImportVerifyResult(
+        status: ImportResultStatus.error,
+        errorMessage: "Invalid blindkey file structure",
+      ));
+      return;
+    }
+
+    final encManifest = manifestFile.content as List<int>;
+    final algorithm = AesGcm.with256bits();
+    
+    try {
+      final secretBox = SecretBox.fromConcatenation(
+        encManifest,
+        nonceLength: algorithm.nonceLength,
+        macLength: algorithm.macAlgorithm.macLength,
+      );
+      final clearBytes = await algorithm.decrypt(secretBox, secretKey: secretKey);
+      final json = utf8.decode(clearBytes);
+      final map = jsonDecode(json);
+
+      // Check Expiry
+      if (map.containsKey('expiryDate') && map['expiryDate'] != null) {
+        final expiryIso = map['expiryDate'] as String;
+        final expiryDate = DateTime.tryParse(expiryIso);
+        if (expiryDate != null && trustedNow.toUtc().isAfter(expiryDate.toUtc())) {
+          await inputStream.close();
+          args.sendPort.send(_IsolateImportVerifyResult(status: ImportResultStatus.expired));
+          return;
+        }
+      }
+
+      await inputStream.close();
+      args.sendPort.send(_IsolateImportVerifyResult(
+        status: ImportResultStatus.success,
+        manifest: map,
+        salt: salt,
+        keyBytes: keyBytes,
+      ));
+    } catch (e) {
+      await inputStream.close();
+      args.sendPort.send(_IsolateImportVerifyResult(status: ImportResultStatus.invalidPassword));
+    }
+  } catch (e) {
+    args.sendPort.send(_IsolateImportVerifyResult(
+      status: ImportResultStatus.error,
+      errorMessage: e.toString(),
+    ));
+  }
 }

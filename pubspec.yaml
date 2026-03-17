@@ -28,6 +28,7 @@ dependencies:
 
   # Cryptography & Security
   cryptography: ^2.7.0
+  cryptography_flutter: ^2.3.2
   flutter_secure_storage: ^9.2.2
 
   # File & Storage
