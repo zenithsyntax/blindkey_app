@@ -648,29 +648,11 @@ class FolderViewPage extends HookConsumerWidget {
   ) async {
     try {
       final picker = ImagePicker();
-      // pickMultiImage is for images only. For mixed content or videos from gallery, distinct methods needed?
-      // pickMultiImage returns List<XFile>.
-      // pickVideo returns XFile?
-      // Implementing a choice or just using pickMultiImage for now.
-      // User requested "select from gallery". Usually implies picking existing media.
-      // We can use pickMultipleMedia if available in newer image_picker versions, or pickMultiImage.
-      // Checking image_picker capabilities... available since 0.8.9: pickMultipleMedia
-      // But let's stick to pickMultiImage for now as it's safer, or use standard file picker for mixed?
-      // Actually standard File Picker (Select Files) covers everything from gallery too usually.
-      // But explicit "Gallery" usually means using the OS photo picker.
-      // Let's use pickMultiImage which is fast and native-like for photos.
-      // For videos from gallery, we might need another option or use pickVideo(source: gallery).
-      // Let's use pickMultipleMedia if possible, checking pubspec... dependency added was 'image_picker'.
-      // Assumption: Latest version supports pickMedia/pickMultipleMedia.
-      // If not, we fall back to pickMultiImage.
-      // Let's try pickMultipleMedia. If it fails compilation, we will fix.
-      // Actually, safest is pickMultiImage for "Photos" and pickVideo for "Videos".
-      // Let's just implement pickMultiImage for "Gallery" option for now, or maybe ask?
-      // Task says "capture video or photo or select from gallery".
-      // "Select from gallery" -> likely means photos/videos.
-      // I'll use pickMultipleMedia.
-
+      // pickMultipleMedia() opens the platform-specific media picker.
+      // On modern Android (13+), this is a draggable bottom sheet.
+      // On iOS, it's the standard media picker.
       final List<XFile> medias = await picker.pickMultipleMedia();
+
       if (medias.isNotEmpty) {
         isProcessing.value = true;
         await _handleUpload(
@@ -680,8 +662,7 @@ class FolderViewPage extends HookConsumerWidget {
         );
       }
     } catch (e) {
-      // Fallback or error
-      _showError(context, "Could not open gallery: $e");
+      _showError(context, "Could not open gallery: ${ErrorMapper.getUserFriendlyError(e)}");
     } finally {
       isProcessing.value = false;
     }
@@ -710,20 +691,24 @@ class FolderViewPage extends HookConsumerWidget {
       ref.read(uploadPrefsServiceProvider.notifier).setUploadInfoShown();
     }
 
-    isProcessing.value = true;
     try {
-      // Small delay to ensure UI updates
-      await Future.delayed(const Duration(milliseconds: 100));
-
+      // Use FilePicker for browsing folders/files.
+      // This opens the system's file manager (Files app on iOS, File Manager/Recent on Android).
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
+        type: FileType.any, // Ensure all file types are selectable
         withReadStream: false,
       );
 
-      if (result != null) {
+      if (result != null && result.paths.isNotEmpty) {
+        isProcessing.value = true;
+        // Small delay to ensure UI updates smoothly if processing is heavy
+        await Future.delayed(const Duration(milliseconds: 100));
+
         final files = result.paths
             .whereType<String>()
             .map((e) => File(e))
+            .where((f) => f.existsSync()) // Safety check
             .toList();
 
         // Validate files before processing
@@ -736,7 +721,7 @@ class FolderViewPage extends HookConsumerWidget {
             isProcessing.value = false;
             return;
           }
-          // Example: Limit > 1GB (adjust as needed)
+          // Limit > 1GB
           if (f.lengthSync() > 1024 * 1024 * 1024) {
             _showError(
               context,
