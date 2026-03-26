@@ -648,10 +648,9 @@ class FolderViewPage extends HookConsumerWidget {
   ) async {
     try {
       final picker = ImagePicker();
-      // pickMultipleMedia() opens the platform-specific media picker.
-      // On modern Android (13+), this is a draggable bottom sheet.
-      // On iOS, it's the standard media picker.
-      final List<XFile> medias = await picker.pickMultipleMedia();
+      // Use pickMultiImage() to force the standard image gallery picker 
+      // instead of the broad media/document picker.
+      final List<XFile> medias = await picker.pickMultiImage();
 
       if (medias.isNotEmpty) {
         isProcessing.value = true;
