@@ -5,7 +5,7 @@ import 'package:blindkey_app/domain/repositories/file_repository.dart';
 import 'package:blindkey_app/infrastructure/repositories/metadata_repository.dart';
 import 'package:blindkey_app/infrastructure/storage/file_storage_service.dart';
 import 'package:dartz/dartz.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 class FileRepositoryImpl implements FileRepository {
   final MetadataRepository metadataRepository;

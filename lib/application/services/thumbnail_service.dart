@@ -44,7 +44,7 @@ class ThumbnailService {
 
       return Uint8List.fromList(clearText);
     } catch (e) {
-      print('ThumbnailService: Decryption error: $e');
+      debugPrint('ThumbnailService: Decryption error: $e');
       return null;
     }
   }
@@ -86,7 +86,7 @@ class ThumbnailService {
         _GenThumbArgs(originalPath, destPath, keyBytes),
       );
     } catch (e) {
-      print('ThumbnailService: Error generating from file: $e');
+      debugPrint('ThumbnailService: Error generating from file: $e');
     }
   }
 
@@ -108,7 +108,7 @@ class ThumbnailService {
         _GenThumbBytesArgs(bytes, destPath, keyBytes),
       );
     } catch (e) {
-      print('ThumbnailService: Error generating from bytes: $e');
+      debugPrint('ThumbnailService: Error generating from bytes: $e');
     }
   }
 

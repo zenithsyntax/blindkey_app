@@ -17,6 +17,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:dartz/dartz.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:blindkey_app/application/services/trusted_time_service.dart';
 import 'package:blindkey_app/application/services/thumbnail_service.dart';
 
@@ -997,7 +998,7 @@ class VaultService {
       } else if (message == "DONE") {
         break;
       } else if (message is String && message.startsWith("ERROR")) {
-        print("Bulk Import Error: $message");
+        debugPrint("Bulk Import Error: $message");
       }
     }
   }

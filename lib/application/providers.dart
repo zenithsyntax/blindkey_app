@@ -36,7 +36,8 @@ AppLockService appLockService(AppLockServiceRef ref) {
 
 @riverpod
 FolderRepository folderRepository(FolderRepositoryRef ref) {
-  return MetadataRepository();
+  final storage = ref.watch(secureStorageServiceProvider);
+  return MetadataRepository(storage);
 }
 
 @riverpod
@@ -46,8 +47,8 @@ FileStorageService fileStorageService(FileStorageServiceRef ref) {
 
 @riverpod
 MetadataRepository metadataRepository(MetadataRepositoryRef ref) {
-  // Required for FileRepo
-  return MetadataRepository();
+  final storage = ref.watch(secureStorageServiceProvider);
+  return MetadataRepository(storage);
   // Ideally single instance if it holds DB connection?
   // MetadataRepository implementation handles singleton DB via `_database` field?
   // Wait, `MetadataRepository` logic: `Database? _database; Future<Database> get database async`.
@@ -59,7 +60,8 @@ MetadataRepository metadataRepository(MetadataRepositoryRef ref) {
 // We need a singleton specific provider for the actual instance if we want to share it.
 @Riverpod(keepAlive: true)
 MetadataRepository sharedMetadataRepository(SharedMetadataRepositoryRef ref) {
-  return MetadataRepository();
+  final storage = ref.watch(secureStorageServiceProvider);
+  return MetadataRepository(storage);
 }
 
 @riverpod

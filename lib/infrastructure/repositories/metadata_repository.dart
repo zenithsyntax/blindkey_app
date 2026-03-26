@@ -2,11 +2,17 @@ import 'package:blindkey_app/domain/failures/failures.dart';
 import 'package:blindkey_app/domain/models/folder_model.dart';
 import 'package:blindkey_app/domain/repositories/folder_repository.dart';
 import 'package:dartz/dartz.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:blindkey_app/infrastructure/storage/secure_storage_service.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
+import 'dart:convert';
+import 'dart:math';
 import 'package:path/path.dart';
 
 class MetadataRepository implements FolderRepository {
   Database? _database;
+  final SecureStorageService _secureStorageService;
+
+  MetadataRepository(this._secureStorageService);
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -14,12 +20,35 @@ class MetadataRepository implements FolderRepository {
     return _database!;
   }
 
+  Future<String> _getDbKey() async {
+    final result = await _secureStorageService.read('db_encryption_key');
+    return result.fold(
+      (l) => _generateAndStoreDbKey(),
+      (key) async {
+        if (key == null || key.isEmpty) {
+          return await _generateAndStoreDbKey();
+        }
+        return key;
+      },
+    );
+  }
+
+  Future<String> _generateAndStoreDbKey() async {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rand.nextInt(256));
+    final key = base64Encode(bytes);
+    await _secureStorageService.write('db_encryption_key', key);
+    return key;
+  }
+
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
+    final key = await _getDbKey();
 
     return await openDatabase(
       path,
+      password: key,
       version: 3,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,

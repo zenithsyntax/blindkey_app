@@ -1,25 +1,14 @@
-import 'package:ntp/ntp.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
 
 class TrustedTimeService {
-  /// Fetches the current time from a trusted source (NTP or HTTPS).
+  /// Fetches the current time from a trusted HTTPS source (Google).
+  /// This prevents MITM time spoofing attacks associated with unencrypted NTP.
   /// Throws an exception if internet is unavailable or sources are unreachable.
   Future<DateTime> getTrustedTime() async {
     try {
-      // 1. Try NTP (Network Time Protocol) - fast and accurate
-      // Uses pool.ntp.org by default
-      final offset = await NTP.getNtpOffset(localTime: DateTime.now());
-      return DateTime.now().add(Duration(milliseconds: offset));
-    } catch (e) {
-      // 2. Fallback to HTTPS Time (Google) if NTP fails (e.g. firewall)
-      return await _getHttpTime();
-    }
-  }
-
-  Future<DateTime> _getHttpTime() async {
-    try {
-      // Using google.com as a reliable high-availability server
+      // Using google.com as a reliable high-availability server.
+      // The HTTPS connection ensures TLS protection against MITM time spoofing.
       final response = await http.head(Uri.parse('https://www.google.com'));
       if (response.statusCode == 200) {
         final dateStr = response.headers['date'];
@@ -28,7 +17,7 @@ class TrustedTimeService {
           return HttpDate.parse(dateStr).toLocal(); 
         }
       }
-      throw Exception('Invalid time response');
+      throw Exception('Invalid time response from trusted server');
     } catch (e) {
       throw Exception('Internet connection is required to verify time: $e');
     }
